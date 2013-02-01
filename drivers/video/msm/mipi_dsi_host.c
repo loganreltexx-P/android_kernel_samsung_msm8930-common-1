@@ -1067,11 +1067,9 @@ void mipi_dsi_wait4video_done(void)
 	mipi_dsi_enable_irq(DSI_VIDEO_TERM);
 	mipi_dsi_irq_set(DSI_INTR_VIDEO_DONE_MASK, DSI_INTR_VIDEO_DONE_MASK);
 	spin_unlock_irqrestore(&dsi_mdp_lock, flag);
-	
-	if (!wait_for_completion_timeout(&dsi_video_comp,
-					msecs_to_jiffies(200))) {
-		pr_err("%s: video_done timeout error\n", __func__);
-	}
+
+	wait_for_completion_timeout(&dsi_video_comp,
+					msecs_to_jiffies(VSYNC_PERIOD * 4));
 }
 
 void mipi_dsi_mdp_busy_wait(void)

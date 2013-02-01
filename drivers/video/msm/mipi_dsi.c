@@ -107,6 +107,14 @@ static int mipi_dsi_low_power_config(struct platform_device *pdev,
 	return ret;
 }
 
+static int mipi_dsi_fps_level_change(struct platform_device *pdev,
+					u32 fps_level)
+{
+	mipi_dsi_wait4video_done();
+	mipi_dsi_configure_fb_divider(fps_level);
+	return 0;
+}
+
 static int mipi_dsi_off(struct platform_device *pdev)
 {
 	int ret = 0;

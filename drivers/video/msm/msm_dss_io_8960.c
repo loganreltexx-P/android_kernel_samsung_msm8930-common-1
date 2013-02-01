@@ -457,6 +457,28 @@ void mipi_dsi_configure_dividers(int fps)
 } 
 #endif
 
+void mipi_dsi_configure_fb_divider(u32 fps_level)
+{
+	u32 fb_div_req, fb_div_req_by_2;
+	u32 vco_required;
+
+	vco_required = vco_level_100 * fps_level/100;
+	if (vco_required < vco_min_allowed) {
+		printk(KERN_WARNING "Can not change fps. Min level allowed is \
+	%d \n", (vco_min_allowed * 100 / vco_level_100) + 1);
+		return;
+	}
+
+	fb_div_req = vco_required * PREF_DIV_RATIO / 27;
+	fb_div_req_by_2 = (fb_div_req / 2) - 1;
+
+	pll_divider_config.fb_divider = fb_div_req;
+
+	/* DSIPHY_PLL_CTRL_1 */
+	MIPI_OUTP(MIPI_DSI_BASE + 0x204, fb_div_req_by_2 & 0xff);
+	wmb();
+}
+
 int mipi_dsi_clk_div_config(uint8 bpp, uint8 lanes,
 			    uint32 *expected_dsi_pclk)
 {
