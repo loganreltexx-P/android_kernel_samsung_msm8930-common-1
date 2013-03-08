@@ -1530,6 +1530,9 @@ static void samsung_sys_class_init(void)
 	pr_info("samsung sys class end.\n");
 };
 
+struct fmem_platform_data msm8930_fmem_pdata = {
+};
+
 #define DSP_RAM_BASE_8960 0x8da00000
 #define DSP_RAM_SIZE_8960 0x1800000
 static int dspcrashd_pdata_8960 = 0xDEADDEAD;
@@ -4427,6 +4430,7 @@ static struct platform_device *common_devices[] __initdata = {
 #ifdef CONFIG_MSM_FAKE_BATTERY
 	&fish_battery_device,
 #endif
+	&msm8930_fmem_device,
 	&msm_device_bam_dmux,
 	&msm_fm_platform_init,
 
