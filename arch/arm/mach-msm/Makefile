@@ -467,6 +467,9 @@ endif
 obj-$(CONFIG_MSM_CPU_PWRCTL) +=  msm_cpu_pwrctl.o
 obj-$(CONFIG_CPU_FREQ_MSM) += cpufreq.o
 
+obj-$(CONFIG_HAS_MACH_MEMUTILS) += memutils/
+obj-$(CONFIG_ARCH_RANDOM) += early_random.o
+
 ifdef CONFIG_SEC_THERMISTOR
 obj-$(CONFIG_SEC_THERMISTOR) += sec_thermistor.o msm8930-thermistor.o
 endif
