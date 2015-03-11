@@ -94,4 +94,6 @@ obj-$(CONFIG_SEC_MODEM) += modem_if/
 
 obj-$(CONFIG_SEC_TORCH_FLASH)	+= sec_torch.o
 
+obj-$(CONFIG_2MIC_ES305)	+= a2220.o
+
 obj-$(CONFIG_UID_CPUTIME)	+= uid_cputime.o
