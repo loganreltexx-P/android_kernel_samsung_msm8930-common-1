@@ -159,6 +159,15 @@ struct lvds_panel_info {
 struct msm_panel_info {
 	__u32 xres;
 	__u32 yres;
+#if defined(CONFIG_MACH_MELIUS) \
+	|| defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT) || defined(CONFIG_MACH_LT02_CHN_CTC) \
+	|| defined(CONFIG_FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WSVGA_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_QHD_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_NT35510_CMD_WVGA_PT_PANEL)
+	__u32 height;
+	__u32 width;
+#endif
 	__u32 bpp;
 	__u32 mode2_xres;
 	__u32 mode2_yres;
@@ -210,6 +219,7 @@ struct msm_fb_panel_data {
 	int (*clk_func) (int enable);
 	int (*fps_level_change) (struct platform_device *pdev,
 					u32 fps_level);
+	int (*low_power_config) (struct platform_device *pdev, int enable);
 };
 
 /*===========================================================================
@@ -221,6 +231,7 @@ int panel_next_on(struct platform_device *pdev);
 int panel_next_off(struct platform_device *pdev);
 int panel_next_fps_level_change(struct platform_device *pdev,
 					u32 fps_level);
+int panel_next_low_power_config(struct platform_device *pdev, int enable);
 int panel_next_late_init(struct platform_device *pdev);
 int panel_next_early_off(struct platform_device *pdev);
 

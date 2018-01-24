@@ -1,4 +1,4 @@
-/*  Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/*  Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -16,7 +16,7 @@
 #include <linux/uaccess.h>
 #include <linux/wait.h>
 #include <linux/mutex.h>
-
+#include <linux/delay.h>
 #include <asm/mach-types.h>
 #include <mach/qdsp6v2/audio_acdb.h>
 #include <mach/qdsp6v2/rtac.h>
@@ -43,7 +43,10 @@
 #define TOTAL_VOICE_CAL_SIZE	(NUM_VOICE_CAL_BUFFERS * VOICE_CAL_BUFFER_SIZE)
 
 static struct common_data common;
-
+static int loopback_state;
+#ifdef CONFIG_SEC_DHA_SOL_MAL
+static int dha_state;
+#endif
 static int voice_send_enable_vocproc_cmd(struct voice_data *v);
 static int voice_send_netid_timing_cmd(struct voice_data *v);
 static int voice_send_attach_vocproc_cmd(struct voice_data *v);
@@ -72,6 +75,9 @@ static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv);
 static int32_t qdsp_cvs_callback(struct apr_client_data *data, void *priv);
 static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv);
 static int voice_send_set_device_cmd_v2(struct voice_data *v);
+
+static int voice_send_set_loopback_enable_cmd(struct voice_data *v);
+
 
 static u16 voice_get_mvm_handle(struct voice_data *v)
 {
@@ -890,6 +896,76 @@ static int voice_set_dtx(struct voice_data *v)
 	return 0;
 }
 
+static int voice_config_cvs_vocoder_amr_rate(struct voice_data *v)
+{
+	int ret = 0;
+	void *apr_cvs;
+	u16 cvs_handle;
+	struct cvs_set_amr_enc_rate_cmd cvs_set_amr_rate;
+
+	if (v == NULL) {
+		pr_err("%s: v is NULL\n", __func__);
+
+		ret = -EINVAL;
+		goto done;
+	}
+	apr_cvs = common.apr_q6_cvs;
+
+	if (!apr_cvs) {
+		pr_err("%s: apr_cvs is NULL.\n", __func__);
+
+		ret = -EINVAL;
+		goto done;
+	}
+
+	cvs_handle = voice_get_cvs_handle(v);
+
+	pr_debug("%s: Setting AMR rate. Media Type: %d\n", __func__,
+		 common.mvs_info.media_type);
+
+	cvs_set_amr_rate.hdr.hdr_field =
+			APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+			APR_HDR_LEN(APR_HDR_SIZE),
+			APR_PKT_VER);
+	cvs_set_amr_rate.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
+			       sizeof(cvs_set_amr_rate) - APR_HDR_SIZE);
+	cvs_set_amr_rate.hdr.src_port = v->session_id;
+	cvs_set_amr_rate.hdr.dest_port = cvs_handle;
+	cvs_set_amr_rate.hdr.token = 0;
+
+	if (common.mvs_info.media_type == VSS_MEDIA_ID_AMR_NB_MODEM)
+		cvs_set_amr_rate.hdr.opcode =
+				VSS_ISTREAM_CMD_VOC_AMR_SET_ENC_RATE;
+	else if (common.mvs_info.media_type == VSS_MEDIA_ID_AMR_WB_MODEM)
+		cvs_set_amr_rate.hdr.opcode =
+				VSS_ISTREAM_CMD_VOC_AMRWB_SET_ENC_RATE;
+
+	cvs_set_amr_rate.amr_rate.mode = common.mvs_info.rate;
+
+	v->cvs_state = CMD_STATUS_FAIL;
+
+	ret = apr_send_pkt(apr_cvs, (uint32_t *) &cvs_set_amr_rate);
+	if (ret < 0) {
+		pr_err("%s: Error %d sending SET_AMR_RATE\n",
+		       __func__, ret);
+
+		goto done;
+	}
+	ret = wait_event_timeout(v->cvs_wait,
+				 (v->cvs_state == CMD_STATUS_SUCCESS),
+				 msecs_to_jiffies(TIMEOUT_MS));
+	if (!ret) {
+		pr_err("%s: wait_event timeout\n", __func__);
+
+		ret = -EINVAL;
+		goto done;
+	}
+
+	return 0;
+done:
+	return ret;
+}
+
 static int voice_config_cvs_vocoder(struct voice_data *v)
 {
 	int ret = 0;
@@ -942,9 +1018,7 @@ static int voice_config_cvs_vocoder(struct voice_data *v)
 	}
 	/* Set encoder properties. */
 	switch (common.mvs_info.media_type) {
-	case VSS_MEDIA_ID_EVRC_MODEM:
-	case VSS_MEDIA_ID_4GV_NB_MODEM:
-	case VSS_MEDIA_ID_4GV_WB_MODEM: {
+	case VSS_MEDIA_ID_EVRC_MODEM: {
 		struct cvs_set_cdma_enc_minmax_rate_cmd cvs_set_cdma_rate;
 
 		pr_debug("Setting EVRC min-max rate\n");
@@ -960,8 +1034,10 @@ static int voice_config_cvs_vocoder(struct voice_data *v)
 		cvs_set_cdma_rate.hdr.token = 0;
 		cvs_set_cdma_rate.hdr.opcode =
 				VSS_ISTREAM_CMD_CDMA_SET_ENC_MINMAX_RATE;
-		cvs_set_cdma_rate.cdma_rate.min_rate = common.mvs_info.rate;
-		cvs_set_cdma_rate.cdma_rate.max_rate = common.mvs_info.rate;
+		cvs_set_cdma_rate.cdma_rate.min_rate =
+				common.mvs_info.evrc_min_rate;
+		cvs_set_cdma_rate.cdma_rate.max_rate =
+				common.mvs_info.evrc_max_rate;
 
 		v->cvs_state = CMD_STATUS_FAIL;
 
@@ -981,78 +1057,13 @@ static int voice_config_cvs_vocoder(struct voice_data *v)
 		}
 		break;
 	}
-	case VSS_MEDIA_ID_AMR_NB_MODEM: {
-		struct cvs_set_amr_enc_rate_cmd cvs_set_amr_rate;
-
-		pr_debug("Setting AMR rate\n");
-
-		cvs_set_amr_rate.hdr.hdr_field =
-				APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
-				APR_HDR_LEN(APR_HDR_SIZE),
-				APR_PKT_VER);
-		cvs_set_amr_rate.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
-				       sizeof(cvs_set_amr_rate) - APR_HDR_SIZE);
-		cvs_set_amr_rate.hdr.src_port = v->session_id;
-		cvs_set_amr_rate.hdr.dest_port = cvs_handle;
-		cvs_set_amr_rate.hdr.token = 0;
-		cvs_set_amr_rate.hdr.opcode =
-					VSS_ISTREAM_CMD_VOC_AMR_SET_ENC_RATE;
-		cvs_set_amr_rate.amr_rate.mode = common.mvs_info.rate;
-
-		v->cvs_state = CMD_STATUS_FAIL;
-
-		ret = apr_send_pkt(apr_cvs, (uint32_t *) &cvs_set_amr_rate);
-		if (ret < 0) {
-			pr_err("%s: Error %d sending SET_AMR_RATE\n",
-			       __func__, ret);
-			goto fail;
-		}
-		ret = wait_event_timeout(v->cvs_wait,
-					 (v->cvs_state == CMD_STATUS_SUCCESS),
-					 msecs_to_jiffies(TIMEOUT_MS));
-		if (!ret) {
-			pr_err("%s: wait_event timeout\n", __func__);
-			goto fail;
-		}
-
-		ret = voice_set_dtx(v);
-		if (ret < 0)
-			goto fail;
-
-		break;
-	}
+	case VSS_MEDIA_ID_AMR_NB_MODEM:
 	case VSS_MEDIA_ID_AMR_WB_MODEM: {
-		struct cvs_set_amrwb_enc_rate_cmd cvs_set_amrwb_rate;
-
-		pr_debug("Setting AMR WB rate\n");
-
-		cvs_set_amrwb_rate.hdr.hdr_field =
-				APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
-				APR_HDR_LEN(APR_HDR_SIZE),
-				APR_PKT_VER);
-		cvs_set_amrwb_rate.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
-						sizeof(cvs_set_amrwb_rate) -
-						APR_HDR_SIZE);
-		cvs_set_amrwb_rate.hdr.src_port = v->session_id;
-		cvs_set_amrwb_rate.hdr.dest_port = cvs_handle;
-		cvs_set_amrwb_rate.hdr.token = 0;
-		cvs_set_amrwb_rate.hdr.opcode =
-					VSS_ISTREAM_CMD_VOC_AMRWB_SET_ENC_RATE;
-		cvs_set_amrwb_rate.amrwb_rate.mode = common.mvs_info.rate;
-
-		v->cvs_state = CMD_STATUS_FAIL;
-
-		ret = apr_send_pkt(apr_cvs, (uint32_t *) &cvs_set_amrwb_rate);
-		if (ret < 0) {
-			pr_err("%s: Error %d sending SET_AMRWB_RATE\n",
+		ret = voice_config_cvs_vocoder_amr_rate(v);
+		if (ret) {
+			pr_err("%s: Failed to update vocoder rate. %d\n",
 			       __func__, ret);
-			goto fail;
-		}
-		ret = wait_event_timeout(v->cvs_wait,
-					 (v->cvs_state == CMD_STATUS_SUCCESS),
-					 msecs_to_jiffies(TIMEOUT_MS));
-		if (!ret) {
-			pr_err("%s: wait_event timeout\n", __func__);
+
 			goto fail;
 		}
 
@@ -1077,6 +1088,31 @@ static int voice_config_cvs_vocoder(struct voice_data *v)
 
 fail:
 	return -EINVAL;
+}
+
+int voc_update_amr_vocoder_rate(uint32_t session_id)
+{
+	int ret = 0;
+	struct voice_data *v;
+
+	pr_debug("%s: session_id:%d", __func__, session_id);
+
+	v = voice_get_session(session_id);
+
+	if (v == NULL) {
+		pr_err("%s: v is NULL, session_id:%d\n", __func__,
+		       session_id);
+
+		ret = -EINVAL;
+		goto done;
+	}
+
+	mutex_lock(&v->lock);
+	ret = voice_config_cvs_vocoder_amr_rate(v);
+	mutex_unlock(&v->lock);
+
+done:
+	return ret;
 }
 
 static int voice_send_start_voice_cmd(struct voice_data *v)
@@ -2179,6 +2215,64 @@ static int voice_send_set_pp_enable_cmd(struct voice_data *v,
 	}
 	ret = wait_event_timeout(v->cvs_wait,
 		(v->cvs_state == CMD_STATUS_SUCCESS),
+			msecs_to_jiffies(TIMEOUT_MS));
+	if (!ret) {
+		pr_err("%s: wait_event timeout\n", __func__);
+		goto fail;
+	}
+	return 0;
+fail:
+	return -EINVAL;
+}
+
+static int voice_send_set_loopback_enable_cmd(struct voice_data *v)
+{
+	struct cvs_set_loopback_enable_cmd cvp_set_loopback_cmd;
+	int ret = 0;
+	void *apr_cvp;
+	u16 cvp_handle;
+
+
+	if (v == NULL) {
+		pr_err("%s: v is NULL\n", __func__);
+		return -EINVAL;
+	}
+	apr_cvp = common.apr_q6_cvp;
+
+	if (!apr_cvp) {
+		pr_err("%s: apr_cvp is NULL.\n", __func__);
+		return -EINVAL;
+	}
+	cvp_handle = voice_get_cvp_handle(v);
+
+	/* fill in the header */
+	cvp_set_loopback_cmd.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+	cvp_set_loopback_cmd.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
+				sizeof(cvp_set_loopback_cmd) - APR_HDR_SIZE);
+	cvp_set_loopback_cmd.hdr.src_port = v->session_id;
+	cvp_set_loopback_cmd.hdr.dest_port = cvp_handle;
+	cvp_set_loopback_cmd.hdr.token = 0;
+	cvp_set_loopback_cmd.hdr.opcode = VOICE_CMD_SET_PARAM;
+
+	cvp_set_loopback_cmd.vss_set_loopback.payload_address = 0;
+	cvp_set_loopback_cmd.vss_set_loopback.payload_size = 0x10;
+	cvp_set_loopback_cmd.vss_set_loopback.module_id = VOICEPROC_MODULE_TX;
+	cvp_set_loopback_cmd.vss_set_loopback.param_id =
+		VOICE_PARAM_LOOPBACK_ENABLE;
+	cvp_set_loopback_cmd.vss_set_loopback.param_size = MOD_ENABLE_PARAM_LEN;
+	cvp_set_loopback_cmd.vss_set_loopback.reserved = 0;
+	cvp_set_loopback_cmd.vss_set_loopback.loopback_enable = 1;
+	cvp_set_loopback_cmd.vss_set_loopback.reserved_field = 0;
+
+	v->cvp_state = CMD_STATUS_FAIL;
+	ret = apr_send_pkt(apr_cvp, (uint32_t *) &cvp_set_loopback_cmd);
+	if (ret < 0) {
+		pr_err("Fail: sending cvp set loopback enable,\n");
+		goto fail;
+	}
+	ret = wait_event_timeout(v->cvp_wait,
+		(v->cvp_state == CMD_STATUS_SUCCESS),
 			msecs_to_jiffies(TIMEOUT_MS));
 	if (!ret) {
 		pr_err("%s: wait_event timeout\n", __func__);
@@ -3466,6 +3560,16 @@ uint32_t voc_get_widevoice_enable(uint16_t session_id)
 	return ret;
 }
 
+int voc_get_loopback_enable(void)
+{
+	return loopback_state;
+}
+
+void voc_set_loopback_enable(int loopback_enable)
+{
+	loopback_state = loopback_enable;
+}
+
 int voc_set_pp_enable(uint16_t session_id, uint32_t module_id, uint32_t enable)
 {
 	struct voice_data *v = voice_get_session(session_id);
@@ -3741,6 +3845,16 @@ int voc_start_voice_call(uint16_t session_id)
 			pr_err("start voice failed\n");
 			goto fail;
 		}
+
+		if (loopback_state) {
+			ret = voice_send_set_loopback_enable_cmd(v);
+			if (ret < 0) {
+				pr_err("send loopback cmd failed\n");
+				goto fail;
+			} else {
+				pr_info("send loopback cmd success\n");
+			}
+		}
 		get_sidetone_cal(&sidetone_cal_data);
 		if (v->dev_tx.port_id != RT_PROXY_PORT_001_TX &&
 			v->dev_rx.port_id != RT_PROXY_PORT_001_RX) {
@@ -3841,15 +3955,131 @@ void voc_register_mvs_cb(ul_cb_fn ul_cb,
 }
 
 void voc_config_vocoder(uint32_t media_type,
-			  uint32_t rate,
-			  uint32_t network_type,
-			  uint32_t dtx_mode)
+			uint32_t rate,
+			uint32_t network_type,
+			uint32_t dtx_mode,
+			uint32_t evrc_min_rate,
+			uint32_t evrc_max_rate)
 {
 	common.mvs_info.media_type = media_type;
 	common.mvs_info.rate = rate;
 	common.mvs_info.network_type = network_type;
 	common.mvs_info.dtx_mode = dtx_mode;
+	common.mvs_info.evrc_min_rate = evrc_min_rate;
+	common.mvs_info.evrc_max_rate = evrc_max_rate;
 }
+
+#ifdef CONFIG_SEC_DHA_SOL_MAL
+static int voice_send_dha_data(struct voice_data *v)
+{
+	struct oem_dha_parm_send_cmd vpcm_dha_param_send_cmd;
+	int ret = 0;
+	void *apr_cvp;
+	u16 cvp_handle;
+	if (v == NULL) {
+		pr_err("%s: v is NULL\n", __func__);
+		return -EINVAL;
+	}
+	apr_cvp = common.apr_q6_cvp;
+
+	if (!apr_cvp) {
+		pr_err("%s: apr_cvp is NULL.\n", __func__);
+		return -EINVAL;
+	}
+	cvp_handle = voice_get_cvp_handle(v);
+
+	/* BEGIN: DHA */
+	/* Send start vpcm and wait for response. */
+	pr_debug("Success DHA%s\n", __func__);
+	vpcm_dha_param_send_cmd.hdr.hdr_field =
+				APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
+				APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
+	vpcm_dha_param_send_cmd.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
+				sizeof(vpcm_dha_param_send_cmd) - APR_HDR_SIZE);
+	pr_info(" send vpcm_dha_param_send_cmd, pkt size = %d\n",
+				vpcm_dha_param_send_cmd.hdr.pkt_size);
+	/* fill in the header */
+	vpcm_dha_param_send_cmd.hdr.hdr_field =
+		APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD, APR_HDR_LEN(APR_HDR_SIZE),
+		APR_PKT_VER);
+	vpcm_dha_param_send_cmd.hdr.pkt_size = APR_PKT_SIZE(APR_HDR_SIZE,
+				sizeof(vpcm_dha_param_send_cmd) - APR_HDR_SIZE);
+	vpcm_dha_param_send_cmd.hdr.src_port = v->session_id;
+	vpcm_dha_param_send_cmd.hdr.dest_port = cvp_handle;
+	vpcm_dha_param_send_cmd.hdr.token = 0;
+	vpcm_dha_param_send_cmd.hdr.opcode = VOICE_CMD_SET_PARAM;
+
+	vpcm_dha_param_send_cmd.dha_send.payload_address = 0 ;
+	vpcm_dha_param_send_cmd.dha_send.payload_size = sizeof(struct oem_dha_parm_send_t);
+	vpcm_dha_param_send_cmd.dha_send.module_id = VOICE_MODULE_DHA;
+	vpcm_dha_param_send_cmd.dha_send.param_id = VOICE_PARAM_DHA_DYNAMIC;
+	vpcm_dha_param_send_cmd.dha_send.param_size = sizeof(struct voice_dha_data);
+	vpcm_dha_param_send_cmd.dha_send.reserved = 0;
+
+	vpcm_dha_param_send_cmd.dha_send.dha_mode  = v->sec_dha_data.dha_mode;
+	vpcm_dha_param_send_cmd.dha_send.dha_select =
+				(uint16_t)v->sec_dha_data.dha_select;
+
+	memcpy(vpcm_dha_param_send_cmd.dha_send.dha_params,
+			v->sec_dha_data.dha_params, 24);
+
+	pr_info(" send vpcm_dha_param_send_cmd, mode = %d, select=%d\n",
+				vpcm_dha_param_send_cmd.dha_send.dha_mode , vpcm_dha_param_send_cmd.dha_send.dha_select);
+
+	v->cvp_state = CMD_STATUS_FAIL;
+
+	dha_state = 1;
+
+	ret = apr_send_pkt(apr_cvp, (uint32_t *) &vpcm_dha_param_send_cmd);
+	if (ret < 0)
+		pr_err("Fail in sending vpcm_dha_param_send_cmd\n");
+
+	pr_debug("wait for vpcm_dha_param_send_cmd\n");
+
+	ret = wait_event_timeout(v->cvp_wait,
+				(v->cvp_state == CMD_STATUS_SUCCESS),
+				msecs_to_jiffies(TIMEOUT_MS));
+
+	dha_state = 0;
+
+	if (!ret)
+		pr_err("%s: wait_event timeout\n", __func__);
+
+
+	return ret;
+}
+
+int voice_sec_set_dha_data(uint16_t session_id, short mode,
+			short select, short *parameters)
+{
+	struct voice_data *v = voice_get_session(session_id);
+	int ret = 0;
+	int i;
+
+	if (v == NULL) {
+		pr_err("%s: invalid session_id 0x%x\n", __func__, session_id);
+
+		return -EINVAL;
+	}
+
+	mutex_lock(&v->lock);
+
+	v->sec_dha_data.dha_mode = mode;
+	v->sec_dha_data.dha_select = select;
+
+	for (i = 0; i < 12; i++)
+		v->sec_dha_data.dha_params[i] = (short)parameters[i];
+
+	if (v->voc_state == VOC_RUN)
+		ret = voice_send_dha_data(v);
+		mutex_unlock(&v->lock);
+
+	return ret;
+
+}
+EXPORT_SYMBOL(voice_sec_set_dha_data);
+#endif /* CONFIG_SEC_DHA_SOL_MAL*/
+
 
 static int32_t qdsp_mvm_callback(struct apr_client_data *data, void *priv)
 {
@@ -4170,7 +4400,18 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 			case VOICE_CMD_SET_PARAM:
 				rtac_make_voice_callback(RTAC_CVP, ptr,
 							data->payload_size);
+				if (loopback_state || dha_state) {
+					v->cvp_state = CMD_STATUS_SUCCESS;
+					wake_up(&v->cvp_wait);
+				}
 				break;
+#ifdef CONFIG_SEC_DHA_SOL_MAL
+			case VSS_ICOMMON_CMD_DHA_SET:
+				pr_err("got ACK from CVP dha set\n");
+				v->cvp_state = CMD_STATUS_SUCCESS;
+				wake_up(&v->cvp_wait);
+				break;
+#endif /* CONFIG_SEC_DHA_SOL_MAL*/
 			default:
 				pr_debug("%s: not match cmd = 0x%x\n",
 					__func__, ptr[0]);
@@ -4255,7 +4496,8 @@ err:
 static int __init voice_init(void)
 {
 	int rc = 0, i = 0;
-
+	loopback_state = 0;
+	dha_state = 0;
 	memset(&common, 0, sizeof(struct common_data));
 
 	/* Allocate shared memory */

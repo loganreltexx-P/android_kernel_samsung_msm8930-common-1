@@ -49,6 +49,7 @@ extern struct workqueue_struct *mdp_hist_wq;
 
 extern uint32 mdp_intr_mask;
 
+extern spinlock_t mdp_lut_push_lock;
 #define MDP4_REVISION_V1		0
 #define MDP4_REVISION_V2		1
 #define MDP4_REVISION_V2_1	2
@@ -777,7 +778,11 @@ void mdp_dma3_update(struct msm_fb_data_type *mfd);
 int mdp_lcdc_on(struct platform_device *pdev);
 int mdp_lcdc_off(struct platform_device *pdev);
 void mdp_lcdc_update(struct msm_fb_data_type *mfd);
+
 void mdp_free_splash_buffer(struct msm_fb_data_type *mfd);
+
+void mdp4_overlay_dsi_video_start(void);
+
 #ifdef CONFIG_FB_MSM_MDP303
 int mdp_dsi_video_on(struct platform_device *pdev);
 int mdp_dsi_video_off(struct platform_device *pdev);

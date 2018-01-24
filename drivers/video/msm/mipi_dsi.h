@@ -17,6 +17,8 @@
 #include <mach/scm-io.h>
 #include <linux/list.h>
 
+#include "msm_fb_def.h"
+#include "msm_fb.h"
 #ifdef BIT
 #undef BIT
 #endif
@@ -52,6 +54,7 @@
 #define MIPI_DSI_PANEL_WXGA	6
 #define MIPI_DSI_PANEL_WUXGA	7
 #define MIPI_DSI_PANEL_720P_PT	8
+#define MIPI_DSI_PANEL_FULL_HD_PT 9
 #define DSI_PANEL_MAX	8
 
 enum {		/* mipi dsi panel */
@@ -189,7 +192,7 @@ struct dsi_clk_desc {
 #define DSI_HDR_DATA1(data)	((data) & 0x0ff)
 #define DSI_HDR_WC(wc)		((wc) & 0x0ffff)
 
-#define DSI_BUF_SIZE	64
+#define DSI_BUF_SIZE	256
 #define MIPI_DSI_MRPS	0x04	/* Maximum Return Packet Size */
 
 #define MIPI_DSI_LEN 8 /* 4 x 4 - 6 - 2, bytes dcs header+crc-align  */
@@ -294,14 +297,17 @@ void mipi_dsi_bist_ctrl(void);
 int mipi_dsi_buf_alloc(struct dsi_buf *, int size);
 int mipi_dsi_cmd_dma_add(struct dsi_buf *dp, struct dsi_cmd_desc *cm);
 int mipi_dsi_cmds_tx(struct dsi_buf *dp, struct dsi_cmd_desc *cmds, int cnt);
-int mipi_dsi_cmds_single_tx(struct dsi_buf *dp, struct dsi_cmd_desc *cmds,
-								int cnt);
+int mipi_dsi_cmds_single_tx(struct dsi_buf *dp, struct dsi_cmd_desc *cmds, int cnt);
 
 int mipi_dsi_cmd_dma_tx(struct dsi_buf *dp);
 int mipi_dsi_cmd_reg_tx(uint32 data);
 int mipi_dsi_cmds_rx(struct msm_fb_data_type *mfd,
 			struct dsi_buf *tp, struct dsi_buf *rp,
 			struct dsi_cmd_desc *cmds, int len);
+int mipi_dsi_cmds_rx_lp(struct msm_fb_data_type *mfd,
+			struct dsi_buf *tp, struct dsi_buf *rp,
+			char *cmds, int rlen);
+
 int mipi_dsi_cmd_dma_rx(struct dsi_buf *tp, int rlen);
 void mipi_dsi_host_init(struct mipi_panel_info *pinfo);
 void mipi_dsi_op_mode_config(int mode);
@@ -387,4 +393,15 @@ void mipi_dsi_wait4video_done(void);
 void update_lane_config(struct msm_panel_info *pinfo);
 #endif
 
+#if defined(CONFIG_RUNTIME_MIPI_CLK_CHANGE)
+int mipi_runtime_clk_change(int fps);
+void mipi_dsi_configure_dividers(int fps);
+#endif
+
+void mipi_dsi_irq_set(uint32 mask, uint32 irq);
+void mdp4_dsi_video_wait4dmap_for_dsi(int cndx);
+
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH) || defined(CONFIG_ESD_ERR_FG_RECOVERY)
+void esd_recovery(void);
+#endif
 #endif /* MIPI_DSI_H */

@@ -22,6 +22,9 @@
 
 #include <linux/mfd/pm8xxx/core.h>
 #include <linux/input/pmic8xxx-pwrkey.h>
+#if defined(CONFIG_SEC_DEBUG)
+#include <mach/sec_debug.h>
+#endif
 
 #define PON_CNTL_1 0x1C
 #define PON_CNTL_PULL_UP BIT(7)
@@ -35,15 +38,34 @@
 struct pmic8xxx_pwrkey {
 	struct input_dev *pwr;
 	int key_press_irq;
+	u32	powerkey_state;
 	int key_release_irq;
 	bool press;
 	const struct pm8xxx_pwrkey_platform_data *pdata;
 };
 
+
+#if defined(CONFIG_MACH_MELIUS)
+//#define AUTO_POWER_ON_OFF_FLAG //for auto power-onoff test 2013 03 20 sexykyu
+#ifdef AUTO_POWER_ON_OFF_FLAG
+extern int poweroff_charging;
+static struct timer_list poweroff_keypad_timer;
+static void poweroff_keypad_timer_handler(unsigned long data)
+{
+	struct input_dev *input =  (struct input_dev *)data;
+	printk("force to press powerkey.\n");
+	input_report_key(input, KEY_POWER, 1);
+	input_sync(input);
+	
+}
+#endif
+#endif
+
+#if !defined(CONFIG_MACH_KS02)
 static irqreturn_t pwrkey_press_irq(int irq, void *_pwrkey)
 {
 	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
-
+	
 	if (pwrkey->press == true) {
 		pwrkey->press = false;
 		return IRQ_HANDLED;
@@ -51,9 +73,13 @@ static irqreturn_t pwrkey_press_irq(int irq, void *_pwrkey)
 		pwrkey->press = true;
 	}
 
+	pwrkey->powerkey_state = 1;
+	
 	input_report_key(pwrkey->pwr, KEY_POWER, 1);
 	input_sync(pwrkey->pwr);
-
+#if defined(CONFIG_SEC_DEBUG)
+	sec_debug_check_crash_key(KEY_POWER, 1);
+#endif
 	return IRQ_HANDLED;
 }
 
@@ -69,11 +95,79 @@ static irqreturn_t pwrkey_release_irq(int irq, void *_pwrkey)
 		pwrkey->press = false;
 	}
 
+	pwrkey->powerkey_state = 0;
+
 	input_report_key(pwrkey->pwr, KEY_POWER, 0);
 	input_sync(pwrkey->pwr);
-
+#if defined(CONFIG_SEC_DEBUG)
+	sec_debug_check_crash_key(KEY_POWER, 0);
+#endif
 	return IRQ_HANDLED;
 }
+#else /*#defined(CONFIG_MACH_KS02) */
+extern int Is_folder_state(void);
+static irqreturn_t pwrkey_press_irq(int irq, void *_pwrkey)
+{
+	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
+
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+	printk(KERN_ERR "%s : pwrkey->press = %d\n", __func__, pwrkey->press);
+#endif
+
+		if(Is_folder_state()){
+		printk(KERN_ERR "[KEY] not report keypad : Folder is closed\n");
+			return 0;
+		}
+
+	if (pwrkey->press == true) {
+		pwrkey->press = false;
+		return IRQ_HANDLED;
+	}
+
+	pwrkey->powerkey_state = 1;
+
+	input_report_key(pwrkey->pwr, KEY_END, 1);
+	input_sync(pwrkey->pwr);
+	pwrkey->press = true;
+
+#if defined(CONFIG_SEC_DEBUG)
+	sec_debug_check_crash_key(KEY_POWER, 1);
+#endif
+	return IRQ_HANDLED;
+}
+
+static irqreturn_t pwrkey_release_irq(int irq, void *_pwrkey)
+{
+	struct pmic8xxx_pwrkey *pwrkey = _pwrkey;
+
+#if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
+	printk(KERN_ERR "%s : pwrkey->press = %d\n", __func__, pwrkey->press);
+#endif
+
+	if(Is_folder_state()){
+		printk(KERN_ERR "[KEY] not report keypad : Folder is closed\n");
+		return 0;
+	}
+
+	if (pwrkey->press == false) {
+		input_report_key(pwrkey->pwr, KEY_END, 1);
+		input_sync(pwrkey->pwr);
+		pwrkey->press = true;
+	}
+
+	pwrkey->powerkey_state = 0;
+
+	input_report_key(pwrkey->pwr, KEY_END, 0);
+	input_sync(pwrkey->pwr);
+	pwrkey->press = false;
+
+#if defined(CONFIG_SEC_DEBUG)
+	sec_debug_check_crash_key(KEY_POWER, 0);
+#endif
+	return IRQ_HANDLED;
+}
+
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 static int pmic8xxx_pwrkey_suspend(struct device *dev)
@@ -104,6 +198,26 @@ static int pmic8xxx_pwrkey_resume(struct device *dev)
 static SIMPLE_DEV_PM_OPS(pm8xxx_pwr_key_pm_ops,
 		pmic8xxx_pwrkey_suspend, pmic8xxx_pwrkey_resume);
 
+static ssize_t  sysfs_powerkey_onoff_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct pmic8xxx_pwrkey *pwrkey = dev_get_drvdata(dev);
+	printk(KERN_INFO "inside sysfs_powerkey_onoff_show\n");
+	if (pwrkey->powerkey_state == 1) {
+		printk(KERN_INFO "powerkey is pressed\n");
+		return snprintf(buf, 5, "%d\n", pwrkey->powerkey_state);
+	}
+	if (pwrkey->powerkey_state == 0) {
+		printk(KERN_INFO "powerkey is released\n");
+		return snprintf(buf, 5, "%d\n", pwrkey->powerkey_state);
+	}
+
+	return 0;
+}
+
+static DEVICE_ATTR(sec_powerkey_pressed, 0664 , sysfs_powerkey_onoff_show,
+	NULL);
+
 static int __devinit pmic8xxx_pwrkey_probe(struct platform_device *pdev)
 {
 	struct input_dev *pwr;
@@ -112,7 +226,9 @@ static int __devinit pmic8xxx_pwrkey_probe(struct platform_device *pdev)
 	int err;
 	unsigned int delay;
 	u8 pon_cntl;
+	int ret;
 	struct pmic8xxx_pwrkey *pwrkey;
+	struct device *sec_powerkey;
 	const struct pm8xxx_pwrkey_platform_data *pdata =
 					dev_get_platdata(&pdev->dev);
 
@@ -140,10 +256,13 @@ static int __devinit pmic8xxx_pwrkey_probe(struct platform_device *pdev)
 		err = -ENOMEM;
 		goto free_pwrkey;
 	}
-
+#if !defined(CONFIG_MACH_KS02)	
 	input_set_capability(pwr, EV_KEY, KEY_POWER);
+#else
+	input_set_capability(pwr, EV_KEY, KEY_END);
+#endif
 
-	pwr->name = "pmic8xxx_pwrkey";
+	pwr->name = "sec_powerkey";
 	pwr->phys = "pmic8xxx_pwrkey/input0";
 	pwr->dev.parent = &pdev->dev;
 
@@ -190,7 +309,11 @@ static int __devinit pmic8xxx_pwrkey_probe(struct platform_device *pdev)
 	pwrkey->press = !!err;
 
 	if (pwrkey->press) {
+#if !defined(CONFIG_MACH_KS02)	
 		input_report_key(pwrkey->pwr, KEY_POWER, 1);
+#else
+		input_report_key(pwrkey->pwr, KEY_END, 1);
+#endif
 		input_sync(pwrkey->pwr);
 	}
 
@@ -211,8 +334,40 @@ static int __devinit pmic8xxx_pwrkey_probe(struct platform_device *pdev)
 		goto free_press_irq;
 	}
 
+	sec_powerkey = device_create(sec_class, NULL, 0, NULL, "sec_powerkey");
+	if (IS_ERR(sec_powerkey))
+		pr_err("Failed to create device(sec_powerkey)!\n");
+	ret = device_create_file(sec_powerkey, &dev_attr_sec_powerkey_pressed);
+	if (ret) {
+		pr_err("Failed to create device file in sysfs entries(%s)!\n",
+			dev_attr_sec_powerkey_pressed.attr.name);
+	}
+	dev_set_drvdata(sec_powerkey, pwrkey);
 	device_init_wakeup(&pdev->dev, pdata->wakeup);
 
+#ifdef CONFIG_MACH_CRATERTD_CHN_3G	
+#define BMS_CONTROL 0x224
+#define CHARGER_CONTROL 0x204
+	pm8xxx_writeb(pwrkey->pwr->dev.parent->parent, BMS_CONTROL, 0x0);
+	pm8xxx_writeb(pwrkey->pwr->dev.parent->parent, CHARGER_CONTROL, 0x3);
+	printk("Crater TD disable FG  & charging of PMIC !!!\n");
+#endif
+
+#if defined(CONFIG_MACH_MELIUS)
+#ifdef AUTO_POWER_ON_OFF_FLAG
+	init_timer(&poweroff_keypad_timer);
+	poweroff_keypad_timer.function = poweroff_keypad_timer_handler;
+	poweroff_keypad_timer.data = (unsigned long)pwrkey->pwr;
+	if(poweroff_charging) {	
+		poweroff_keypad_timer.expires = jiffies + 20*HZ;
+	} else {
+		poweroff_keypad_timer.expires = jiffies + 100*HZ;
+	}
+	add_timer(&poweroff_keypad_timer);
+
+	printk("AUTO_POWER_ON_OFF_FLAG Test Start !!!\n");
+#endif
+#endif
 	return 0;
 
 free_press_irq:

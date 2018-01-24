@@ -372,12 +372,16 @@ static int msm_csid_release(struct csid_device *csid_dev)
 			csid_dev->csid_state);
 		return -EINVAL;
 	}
+	if ((csid_dev->base) != NULL) {	/* workaround by teddy*/
+		irq = msm_camera_io_r(csid_dev->base + CSID_IRQ_STATUS_ADDR);
+		msm_camera_io_w(irq, csid_dev->base + CSID_IRQ_CLEAR_CMD_ADDR);
+		msm_camera_io_w(0, csid_dev->base + CSID_IRQ_MASK_ADDR);
 
-	irq = msm_camera_io_r(csid_dev->base + CSID_IRQ_STATUS_ADDR);
-	msm_camera_io_w(irq, csid_dev->base + CSID_IRQ_CLEAR_CMD_ADDR);
-	msm_camera_io_w(0, csid_dev->base + CSID_IRQ_MASK_ADDR);
+		disable_irq(csid_dev->irq->start);
+	} else
+		pr_err("[ERROR][%s::%d] csid_dev->base :: NULL\n",
+			__func__, __LINE__);
 
-	disable_irq(csid_dev->irq->start);
 
 	if (csid_dev->hw_version <= CSID_VERSION_V2) {
 		msm_cam_clk_enable(&csid_dev->pdev->dev, csid_8960_clk_info,
@@ -411,7 +415,9 @@ static int msm_csid_release(struct csid_device *csid_dev)
 			NULL, 0, &csid_dev->csi_vdd, 0);
 	}
 
-	iounmap(csid_dev->base);
+	if ((csid_dev->base) != NULL)	/* workaround by teddy*/
+		iounmap(csid_dev->base);
+
 	csid_dev->base = NULL;
 	csid_dev->csid_state = CSID_POWER_DOWN;
 	return 0;

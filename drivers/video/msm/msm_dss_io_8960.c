@@ -368,6 +368,11 @@ int mipi_dsi_phy_pll_config(u32 clk_rate)
 	/* DSIPHY_PLL_CTRL_10 */
 	MIPI_OUTP(MIPI_DSI_BASE + 0x228, (dividers->dsi_clk_divider - 1));
 
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT_PANEL)
+	MIPI_OUTP(MIPI_DSI_BASE + 0x204, 0X4B);
+	MIPI_OUTP(MIPI_DSI_BASE + 0x208, 0x31);
+	MIPI_OUTP(MIPI_DSI_BASE + 0x20c, 0xda);
+#endif
 	return 0;
 }
 
@@ -392,6 +397,65 @@ void mipi_dsi_configure_fb_divider(u32 fps_level)
 	MIPI_OUTP(MIPI_DSI_BASE + 0x204, fb_div_req_by_2 & 0xff);
 	wmb();
 }
+
+#if defined(CONFIG_RUNTIME_MIPI_CLK_CHANGE)
+#define FIX_FPS 60
+void mipi_dsi_configure_dividers(int fps) 
+{
+	u32 fb_divider, rate, vco;
+	u32 div_ratio = 0;
+	u32 set_rate;
+	struct dsiphy_pll_divider_config *dividers;
+
+	dividers = &pll_divider_config;
+	rate = dividers->clk_rate / 1000000; /* In Mhz */
+
+	if(fps >= 40 && fps <= 60)
+	{
+		if (rate < 125) {
+			vco = rate * 8;
+			div_ratio = 8;
+		} else if (rate < 250) {
+			vco = rate * 4;
+			div_ratio = 4;
+		} else if (rate < 600) {
+			vco = rate * 2;
+			div_ratio = 2;
+		} else {
+			vco = rate * 1;
+			div_ratio = 1;
+		}
+
+		/* 
+			To keep mipi clk swing voltage by QC codes.
+			If we modify vco value, it affects mipi clk voltage.
+		*/
+		set_rate = (rate * fps) / FIX_FPS;
+
+		if (rate < 250) {
+			if (set_rate < 125)
+				fps = ((125 * FIX_FPS) / rate) + 1;
+		} else if (rate < 600) {
+			if (set_rate < 250)
+				fps = ((250 * FIX_FPS) / rate) + 1;
+		} else {
+			if (set_rate < 600)
+				fps = ((600 * FIX_FPS) / rate) + 1;
+		}
+
+		fb_divider = ((vco * fps * PREF_DIV_RATIO) / (27 * FIX_FPS));
+		fb_divider = (fb_divider/2) - 1;
+		MIPI_OUTP(MIPI_DSI_BASE + 0x204, fb_divider & 0xff);
+		wmb();
+
+		pr_info("%s fps : %d", __func__, fps);
+	}
+	else
+	{
+		printk("Invalid fps value\n");
+	}
+} 
+#endif
 
 int mipi_dsi_clk_div_config(uint8 bpp, uint8 lanes,
 			    uint32 *expected_dsi_pclk)

@@ -713,6 +713,13 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
 	spin_unlock_irqrestore(&dev->req_lock, flags);
 
 	if (multi_pkt_xfer) {
+		if (dev->tx_req_bufsize < req->length + skb->len) {
+			pr_err("%s: drop %lx, dev->tx_req_bufsize %d, \
+					req->length %d, skb->len %d\n", __func__,
+					(unsigned long)req->buf, dev->tx_req_bufsize,
+					req->length, skb->len);
+			goto drop;
+		}
 		memcpy(req->buf + req->length, skb->data, skb->len);
 		req->length = req->length + skb->len;
 		length = req->length;
@@ -891,7 +898,9 @@ static int eth_stop(struct net_device *net)
 
 /*-------------------------------------------------------------------------*/
 
+#ifndef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 static u8 host_ethaddr[ETH_ALEN];
+#endif
 
 /* initial value, changed by "ifconfig usb0 hw ether xx:xx:xx:xx:xx:xx" */
 static char *dev_addr;
@@ -924,6 +933,7 @@ static int get_ether_addr(const char *str, u8 *dev_addr)
 	return 1;
 }
 
+#ifndef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 static int get_host_ether_addr(u8 *str, u8 *dev_addr)
 {
 	memcpy(dev_addr, str, ETH_ALEN);
@@ -934,6 +944,7 @@ static int get_host_ether_addr(u8 *str, u8 *dev_addr)
 	memcpy(str, dev_addr, ETH_ALEN);
 	return 1;
 }
+#endif
 
 static struct eth_dev *the_dev;
 
@@ -1014,6 +1025,10 @@ int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 		dev_warn(&g->dev,
 			"using random %s ethernet address\n", "self");
 
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+	memcpy(dev->host_mac, ethaddr, ETH_ALEN);
+	printk(KERN_DEBUG "usb: set unique host mac\n");
+#else
 	if (get_host_ether_addr(host_ethaddr, dev->host_mac))
 		dev_warn(&g->dev, "using random %s ethernet address\n", "host");
 	else
@@ -1021,6 +1036,7 @@ int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 
 	if (ethaddr)
 		memcpy(ethaddr, dev->host_mac, ETH_ALEN);
+#endif
 
 	net->netdev_ops = &eth_netdev_ops;
 
@@ -1035,9 +1051,6 @@ int gether_setup_name(struct usb_gadget *g, u8 ethaddr[ETH_ALEN],
 		dev_dbg(&g->dev, "register_netdev failed, %d\n", status);
 		free_netdev(net);
 	} else {
-		INFO(dev, "MAC %pM\n", net->dev_addr);
-		INFO(dev, "HOST MAC %pM\n", dev->host_mac);
-
 		the_dev = dev;
 
 		/* two kinds of host-initiated state changes:

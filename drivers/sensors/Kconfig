@@ -1,12 +1,32 @@
-config SENSORS
-	bool "Sensors Class Support"
-	help
-	  This option enables the sensor sysfs class in /sys/class/sensors.
-	  You'll need this to do anything useful with sensorss. If unsure, say N.
 
-config SENSORS_SSC
-	bool "Enable Sensors Driver Support for SSC"
+menuconfig INPUT_YAS_SENSORS
+	bool "Sensors Support"
 	help
-	  Add support for sensors SSC driver.
-	  This driver is used for exercising sensors use case,
-	  time syncing with ADSP clock.
+	  Say Y to enable Sensors support.  This allows control of supported
+	  Sensors.
+
+if INPUT_YAS_SENSORS
+source "drivers/sensors/accelerometer/Kconfig"
+source "drivers/sensors/geomagnetic/Kconfig"
+source "drivers/sensors/orientation/Kconfig"
+source "drivers/sensors/optical/Kconfig"
+source "drivers/sensors/accelerometer_k2dh/Kconfig"
+endif # INPUT_YAS_SENSORS
+
+menuconfig GRIP_SENSOR
+	bool "Sensors Support"
+	help
+	  Say Y to enable grip Sensors support.  This allows control of supported
+	  Sensors.
+
+if GRIP_SENSOR
+source "drivers/sensors/grip/Kconfig"
+endif
+
+config SENSORS_CORE
+         bool "sensors_core"
+         depends on I2C
+
+config SENSOR_USE_SYMLINK
+         bool "sensors_symlink"
+         depends on I2C

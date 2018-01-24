@@ -70,6 +70,8 @@ allowed_warnings = set([
    "f_qdss.c:740",
    "mipi_novatek.c:569",
    "swab.h:34",
+   "cpufreq_intelliactive.c:832",
+   "cpufreq_intelliactive.c:875",
  ])
 
 # Capture the name of the object file, can find it.

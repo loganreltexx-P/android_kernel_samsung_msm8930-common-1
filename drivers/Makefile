@@ -123,6 +123,7 @@ obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 obj-y				+= ieee802154/
+obj-$(CONFIG_FM_RADIO)   += samsung/
 #common clk code
 obj-y				+= clk/
 
@@ -144,6 +145,12 @@ obj-$(CONFIG_MOBICORE_SUPPORT)  += gud/
 obj-$(CONFIG_CORESIGHT)		+= coresight/
 obj-$(CONFIG_ESOC)		+= esoc/
 
-#sensor_class
-obj-$(CONFIG_SENSORS)		+= sensors/
+obj-$(CONFIG_VIBETONZ)		+= motor/
+obj-$(CONFIG_MSM_VIBRATOR) += motor/
+obj-$(CONFIG_BATTERY_SAMSUNG)	+= battery/
+obj-$(CONFIG_INPUT_YAS_SENSORS)		+= sensors/
+obj-$(CONFIG_SENSORS_SSP)		+= sensorhub/
+obj-$(CONFIG_SENSORS_ALPS)		+= sensors_alps/
+obj-$(CONFIG_SEC_FPGA)	+= barcode_emul/
+obj-$(CONFIG_ULTRASONIC_SENSOR)	+= ultrasonic/
 

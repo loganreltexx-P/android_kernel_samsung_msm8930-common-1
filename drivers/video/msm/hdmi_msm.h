@@ -14,6 +14,7 @@
 #define __HDMI_MSM_H__
 
 #include <mach/msm_iomap.h>
+#include <linux/switch.h>
 #include "external_common.h"
 /* #define PORT_DEBUG */
 
@@ -106,6 +107,13 @@ struct hdmi_msm_state_type {
 	void __iomem *hdmi_io;
 
 	struct external_common_state_type common;
+	boolean hpd_on_offline;
+#if defined(CONFIG_VIDEO_MHL_V2)
+	boolean mhl_hpd_state;
+#endif
+	struct switch_dev	hdmi_audio_switch;
+	struct switch_dev	hdmi_audio_ch;
+	boolean	boot_completion;
 	boolean is_mhl_enabled;
 	struct completion hpd_event_processed;
 };

@@ -635,6 +635,9 @@ enum msm_bus_perf_setting {
 	S_LIVESHOT,
 	S_DUAL,
 	S_LOW_POWER,
+/*Start : shchang@qualcomm.com : 1101*/
+	S_ADV_VIDEO,
+/*End : shchang@qualcomm.com : 1101*/
 	S_EXIT
 };
 

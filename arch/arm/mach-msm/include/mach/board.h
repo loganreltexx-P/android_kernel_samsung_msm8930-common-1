@@ -61,6 +61,10 @@ struct msm_camera_device_platform_data {
 	struct msm_camera_io_ext ioext;
 	struct msm_camera_io_clk ioclk;
 	uint8_t csid_core;
+	uint8_t is_csiphy;
+	uint8_t is_csic;
+	uint8_t is_csid;
+	uint8_t is_ispif;
 	uint8_t is_vpe;
 	struct msm_bus_scale_pdata *cam_bus_scale_table;
 };
@@ -224,6 +228,24 @@ struct msm_camera_sensor_platform_info {
 	struct msm_camera_gpio_conf *gpio_conf;
 	struct msm_camera_i2c_conf *i2c_conf;
 	struct msm_camera_csi_lane_params *csi_lane_params;
+	int sensor_reset_enable;
+	int sensor_stby;
+	int vt_sensor_reset;
+	int vt_sensor_stby;
+	int flash_en;
+	int flash_set;
+	int mclk;
+	int sensor_pwd;
+	int vcm_pwd;
+	int vcm_enable;
+	int privacy_light;
+	void *privacy_light_info;
+	void(*sensor_power_on) (int);
+	void(*sensor_power_off) (int);
+	void(*sensor_isp_reset) (void);
+	void(*sensor_get_fw) (u8 *isp_fw, u8 *phone_fw);
+	void(*sensor_set_isp_core) (int);
+	bool(*sensor_is_vdd_core_set) (void);
 };
 
 enum msm_camera_actuator_name {
@@ -246,12 +268,18 @@ struct msm_actuator_info {
 	int vcm_enable;
 };
 
+enum msm_eeprom_type {
+	MSM_EEPROM_I2C,
+	MSM_EEPROM_SPI,
+};
+
 struct msm_eeprom_info {
 	struct i2c_board_info const *board_info;
 	int bus_id;
 	int eeprom_reg_addr;
 	int eeprom_read_length;
 	int eeprom_i2c_slave_addr;
+	enum msm_eeprom_type type;
 };
 
 struct msm_camera_sensor_info {
@@ -431,11 +459,18 @@ struct mddi_platform_data {
 
 struct mipi_dsi_platform_data {
 	int vsync_gpio;
+#if defined (CONFIG_MIPI_DSI_RESET_LP11)
+	void (*active_reset)(int high);
+#endif
+	int (*power_common)(void);
 	int (*dsi_power_save)(int on);
+	int (*panel_power_save)(int on);
+	int (*panel_lp_en)(int on);
 	int (*dsi_client_reset)(void);
 	int (*get_lane_config)(void);
 	char (*splash_is_enabled)(void);
 	int target_type;
+	void (*lcd_rst_down)(void);
 };
 
 enum mipi_dsi_3d_ctrl {
@@ -561,6 +596,11 @@ struct isp1763_platform_data {
 	int (*setup_gpio)(int enable);
 };
 #endif
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH)
+struct sec_esd_platform_data {
+	int esd_gpio_irq;
+};
+#endif
 /* common init routines for use by arch/arm/mach-msm/board-*.c */
 
 #ifdef CONFIG_OF_DEVICE
@@ -616,6 +656,13 @@ void msm_snddev_tx_route_config(void);
 void msm_snddev_tx_route_deconfig(void);
 
 extern unsigned int msm_shared_ram_phys; /* defined in arch/arm/mach-msm/io.c */
+extern void msm8930_enable_ear_micbias(bool state);
 
+#ifdef CONFIG_BROADCOM_WIFI
+int brcm_wlan_init(void);
+int brcm_wifi_status_register(
+			void (*callback)(int card_present, void *dev_id), void *dev_id);
+unsigned int brcm_wifi_status(struct device *dev);
+#endif
 
 #endif

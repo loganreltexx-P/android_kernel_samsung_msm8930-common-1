@@ -77,7 +77,6 @@ static int really_do_swap_account __initdata = 0;
 #define do_swap_account		(0)
 #endif
 
-
 /*
  * Statistics for memory cgroup.
  */
@@ -5658,6 +5657,7 @@ static void mem_cgroup_move_task(struct cgroup *cont,
 		put_swap_token(mm);
 		mmput(mm);
 	}
+
 	if (mc.to)
 		mem_cgroup_clear_mc();
 }

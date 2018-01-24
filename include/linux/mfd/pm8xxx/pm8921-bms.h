@@ -27,6 +27,8 @@ struct pm8xxx_bms_core_data {
 	unsigned int	batt_id_channel;
 };
 
+extern bool bms_reset;
+
 /**
  * struct pm8921_bms_platform_data -
  * @batt_type:		allows to force chose battery calibration data
@@ -37,12 +39,6 @@ struct pm8xxx_bms_core_data {
  *			is considered empty(mV)
  * @enable_fcc_learning:	if set the driver will learn full charge
  *				capacity of the battery upon end of charge
- * @min_fcc_learning_soc:	minimum SOC as which CC counting for FCC
- *				learning can start
- * @min_fcc_ocv_pc:		minimum PC (lookup(OCV)) at which CC counting
- *				for FCC learning can start
- * @min_fcc_learning_samples:	Minimum number of FCC measurement cycles to be
- *				used for FCC update
  * @normal_voltage_calc_ms:	The period of soc calculation in ms when battery
  *				voltage higher than cutoff voltage
  * @low_voltage_calc_ms:	The period of soc calculation in ms when battery
@@ -58,6 +54,8 @@ struct pm8xxx_bms_core_data {
  * @low_ocv_correction_limit_uv:	the max amount of OCV corrections
  *					allowed when ocv is low
  *					(lower or equal to 3.8V)
+ * @cutoff_ocv_correction_uv:		the amount of OCV corrections
+ *					applied when vbat is below vcutoff
  * @hold_soc_est:		the min est soc below which the calculated soc
  *				is allowed to go to 0%
  */
@@ -72,9 +70,6 @@ struct pm8921_bms_platform_data {
 	unsigned int			alarm_low_mv;
 	unsigned int			alarm_high_mv;
 	int				enable_fcc_learning;
-	int				min_fcc_learning_soc;
-	int				min_fcc_ocv_pc;
-	int				min_fcc_learning_samples;
 	int				shutdown_soc_valid_limit;
 	int				ignore_shutdown_soc;
 	int				adjust_soc_low_threshold;
@@ -88,7 +83,9 @@ struct pm8921_bms_platform_data {
 	int				vbatt_cutoff_retries;
 	int				high_ocv_correction_limit_uv;
 	int				low_ocv_correction_limit_uv;
+	int				cutoff_ocv_correction_uv;
 	int				hold_soc_est;
+	int				(*get_board_rev)(void);
 };
 
 #if defined(CONFIG_PM8921_BMS) || defined(CONFIG_PM8921_BMS_MODULE)
@@ -189,6 +186,7 @@ void pm8921_bms_battery_removed(void);
  *			for reporting soc.
  */
 void pm8921_bms_battery_inserted(void);
+void bms_quickstart(void);
 #else
 static inline int pm8921_bms_get_vsense_avg(int *result)
 {

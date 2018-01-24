@@ -35,6 +35,14 @@
 #include "mdp.h"
 #include "mdp4.h"
 
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH)
+#include "mipi_samsung_esd_refresh.h"
+#endif
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
+/* Check if LCD was connected. */
+#include "mipi_samsung_oled.h"
+#endif
+
 u32 dsi_irq;
 u32 esc_byte_ratio;
 
@@ -47,6 +55,8 @@ static int mipi_dsi_off(struct platform_device *pdev);
 static int mipi_dsi_on(struct platform_device *pdev);
 static int mipi_dsi_fps_level_change(struct platform_device *pdev,
 					u32 fps_level);
+static int mipi_dsi_low_power_config(struct platform_device *pdev,
+					int enable);
 
 static struct platform_device *pdev_list[MSM_FB_MAX_DEV_LIST];
 static int pdev_list_cnt;
@@ -64,7 +74,20 @@ static struct platform_driver mipi_dsi_driver = {
 };
 
 struct device dsi_dev;
-
+#if defined(CONFIG_MACH_LT02_CHN_CTC)
+extern void WriteRegister(u16 addr, u32 w_data);
+#endif
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH) || defined(CONFIG_ESD_ERR_FG_RECOVERY)
+extern struct mutex power_state_chagne;
+static struct platform_device *pdev_for_esd;
+extern boolean mdp_shutdown_check;
+#endif
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT)
+void pull_reset_low(void){
+if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+	mipi_dsi_pdata->active_reset(0);
+}
+#endif
 static int mipi_dsi_fps_level_change(struct platform_device *pdev,
 					u32 fps_level)
 {
@@ -73,11 +96,23 @@ static int mipi_dsi_fps_level_change(struct platform_device *pdev,
 	return 0;
 }
 
+static int mipi_dsi_low_power_config(struct platform_device *pdev,
+					int enable)
+{
+	int ret = 0;
+
+	if (mipi_dsi_pdata && mipi_dsi_pdata->panel_lp_en)
+		ret = mipi_dsi_pdata->panel_lp_en(enable);
+
+	return ret;
+}
+
 static int mipi_dsi_off(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct msm_fb_data_type *mfd;
 	struct msm_panel_info *pinfo;
+	uint32 dsi_ctrl;
 
 	pr_debug("%s+:\n", __func__);
 
@@ -101,8 +136,9 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	/*
 	 * Desctiption: change to DSI_CMD_MODE since it needed to
 	 * tx DCS dsiplay off comamnd to panel
+	 * mipi_dsi_op_mode_config(DSI_CMD_MODE);
 	 */
-	mipi_dsi_op_mode_config(DSI_CMD_MODE);
+	
 
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
 		if (pinfo->lcd.vsync_enable) {
@@ -121,7 +157,9 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	mipi_dsi_clk_disable();
 
 	/* disbale dsi engine */
-	MIPI_OUTP(MIPI_DSI_BASE + 0x0000, 0);
+	dsi_ctrl = MIPI_INP(MIPI_DSI_BASE + 0x0000);
+	dsi_ctrl &= ~0x01;
+	MIPI_OUTP(MIPI_DSI_BASE + 0x0000, dsi_ctrl);
 
 	mipi_dsi_phy_ctrl(0);
 
@@ -130,8 +168,23 @@ static int mipi_dsi_off(struct platform_device *pdev)
 
 	mipi_dsi_unprepare_clocks();
 	mipi_dsi_unprepare_ahb_clocks();
+#if  defined (CONFIG_MIPI_DSI_RESET_LP11)
+	if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+		mipi_dsi_pdata->active_reset(0); /* low */
+#endif
+
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT_PANEL)
+	if (mipi_dsi_pdata && mipi_dsi_pdata->power_common)
+		mipi_dsi_pdata->panel_power_save(0);
+	
 	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
 		mipi_dsi_pdata->dsi_power_save(0);
+#else
+	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
+		mipi_dsi_pdata->dsi_power_save(0);
+#endif
 
 	if (mdp_rev >= MDP_REV_41)
 		mutex_unlock(&mfd->dma->ov_mutex);
@@ -142,6 +195,66 @@ static int mipi_dsi_off(struct platform_device *pdev)
 
 	return ret;
 }
+
+#if defined(CONFIG_RUNTIME_MIPI_CLK_CHANGE) && defined(CONFIG_FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT_PANEL)
+int is_S6E88A(void);
+int mipi_AMS367_dynamic_fps_folder(int is_folder_action, struct msm_panel_info *pinfo);
+int mipi_AMS367AV_dynamic_fps_folder(int is_folder_action, struct msm_panel_info *pinfo);
+#endif
+
+#ifdef CONFIG_DUAL_LCD
+struct platform_device *mipi_dsi_pdev_switch=NULL;
+DEFINE_MUTEX(mipi_dsi_lock);
+extern int get_lcd_flip_status(void);
+
+/* return : 1=running, 0=not */
+static int in_mipi_dsi_NULL = false;
+int running_mipi_dsi_NULL(void)
+{
+	return in_mipi_dsi_NULL;
+}
+
+int samsung_switching_lcd(int flip)
+{
+	int ret = 0;
+	struct msm_fb_data_type *mfd;
+
+	if (mipi_dsi_pdev_switch == NULL) {
+		pr_err( "%s : cancel by NULL\n", __func__ );
+		return 0;
+	}
+
+	mfd = platform_get_drvdata(mipi_dsi_pdev_switch);
+
+	if (unlikely(!mfd)) {
+		pr_info("%s NO PDEV.\n", __func__);
+		return -ENODEV;
+	}
+
+	mutex_lock(&mipi_dsi_lock);
+	in_mipi_dsi_NULL = true;
+	if (mfd->panel_power_on && (get_lcd_flip_status()!=flip))
+	{
+		ret = mipi_dsi_off(mipi_dsi_pdev_switch);
+		if(!ret)
+		{
+			mdelay(100);
+			ret = mipi_dsi_on(mipi_dsi_pdev_switch);
+			if(ret) pr_info("+++++ mipi_dsi_on fail");
+		}
+		else
+			pr_info("+++++ mipi_dsi_off fail");
+	}
+	in_mipi_dsi_NULL = false;
+	mutex_unlock(&mipi_dsi_lock);
+
+	return ret;
+}
+
+EXPORT_SYMBOL(samsung_switching_lcd);
+#endif // #ifdef CONFIG_DUAL_LCD
+
+extern unsigned int system_rev;
 
 static int mipi_dsi_on(struct platform_device *pdev)
 {
@@ -156,18 +269,47 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	u32 ystride, bpp, data;
 	u32 dummy_xres, dummy_yres;
 	int target_type = 0;
+#if defined (CONFIG_MIPI_DSI_RESET_LP11)
+	u32 tmp;
+#endif	
+	pr_info("%s+:\n", __func__);
 
-	pr_debug("%s+:\n", __func__);
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH) || defined(CONFIG_ESD_ERR_FG_RECOVERY)
+	pdev_for_esd = pdev;
+#endif
+#ifdef CONFIG_DUAL_LCD
+	if (mipi_dsi_pdev_switch == NULL)
+	pr_debug( "%s : pdev_switch updated", __func__ );
+	mipi_dsi_pdev_switch = pdev;
+#endif // #ifdef CONFIG_DUAL_LCD
 
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
+	if (get_lcd_attached() == 0)
+		return ENODEV;
+#endif
 	mfd = platform_get_drvdata(pdev);
 	fbi = mfd->fbi;
 	var = &fbi->var;
 	pinfo = &mfd->panel_info;
 
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT_PANEL) \
+	|| defined(CONFIG_FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT_PANEL)
+	if (mipi_dsi_pdata && mipi_dsi_pdata->power_common)
+		mipi_dsi_pdata->power_common();
+
+	if (mipi_dsi_pdata && mipi_dsi_pdata->power_common)
+		mipi_dsi_pdata->panel_power_save(1);
+
 	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
 		mipi_dsi_pdata->dsi_power_save(1);
+#else
+	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
+		mipi_dsi_pdata->dsi_power_save(1);
+#endif
 
 	cont_splash_clk_ctrl(0);
+
 	mipi_dsi_prepare_ahb_clocks();
 
 	mipi_dsi_ahb_ctrl(1);
@@ -183,6 +325,17 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	mipi_dsi_phy_init(0, &(mfd->panel_info), target_type);
 
 	mipi_dsi_clk_enable();
+
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT_PANEL)
+	mipi_dsi_configure_dividers(60);
+#endif
+
+#if defined(CONFIG_RUNTIME_MIPI_CLK_CHANGE) && defined(CONFIG_FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT_PANEL)
+	if (is_S6E88A())
+		mipi_AMS367AV_dynamic_fps_folder(in_mipi_dsi_NULL, pinfo);
+	else
+		mipi_AMS367_dynamic_fps_folder(in_mipi_dsi_NULL, pinfo);
+#endif
 
 	MIPI_OUTP(MIPI_DSI_BASE + 0x114, 1);
 	MIPI_OUTP(MIPI_DSI_BASE + 0x114, 0);
@@ -254,9 +407,34 @@ static int mipi_dsi_on(struct platform_device *pdev)
 
 	mipi_dsi_host_init(mipi);
 
-	if (mipi->force_clk_lane_hs) {
-		u32 tmp;
+#if defined (CONFIG_MIPI_DSI_RESET_LP11)
 
+	mdelay(10);
+	/* LP11 */
+	tmp = MIPI_INP(MIPI_DSI_BASE + 0xA8);
+	tmp &= ~(1<<28);
+	MIPI_OUTP(MIPI_DSI_BASE + 0xA8, tmp);
+	wmb();
+	/* LP11 */
+
+	usleep(5000);
+	if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+		mipi_dsi_pdata->active_reset(1); /* high */
+	usleep(10000);
+#endif
+
+#if defined(CONFIG_MACH_LT02_SPR) || defined(CONFIG_MACH_LT02_ATT)
+	if(system_rev)
+		ret = panel_next_on(pdev);
+	
+#elif defined(CONFIG_MACH_LT02_CHN_CTC)
+          ret = panel_next_on(pdev);
+#endif
+
+	if (mipi->force_clk_lane_hs) {
+#ifndef CONFIG_MIPI_DSI_RESET_LP11
+		u32 tmp;
+#endif
 		tmp = MIPI_INP(MIPI_DSI_BASE + 0xA8);
 		tmp |= (1<<28);
 		MIPI_OUTP(MIPI_DSI_BASE + 0xA8, tmp);
@@ -268,8 +446,14 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	else
 		down(&mfd->dma->mutex);
 
+#if !defined(CONFIG_MACH_LT02_CHN_CTC) 
+#if defined(CONFIG_MACH_LT02_SPR) || defined(CONFIG_MACH_LT02_ATT)
+	if(!system_rev)
+		ret = panel_next_on(pdev);
+#else
 	ret = panel_next_on(pdev);
-
+#endif
+#endif
 	mipi_dsi_op_mode_config(mipi->mode);
 
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
@@ -328,7 +512,12 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	else
 		up(&mfd->dma->mutex);
 
-	pr_debug("%s-:\n", __func__);
+	pr_info("%s-:\n", __func__);
+
+#if defined(CONFIG_MACH_LT02_CHN_CTC)
+	/*LVDS Enable*/
+          WriteRegister(0x604, 0x3FFFFFE0);
+#endif
 
 	return ret;
 }
@@ -344,6 +533,80 @@ static int mipi_dsi_late_init(struct platform_device *pdev)
 	return panel_next_late_init(pdev);
 }
 
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH)
+void esd_recovery(void)
+{
+	if (pdev_for_esd) {
+		mutex_lock(&power_state_chagne);
+		if(!mdp_shutdown_check)	 {
+			mipi_dsi_off(pdev_for_esd);
+			msleep(100);
+			mipi_dsi_on(pdev_for_esd);
+			mipi_dsi_late_init(pdev_for_esd);
+		}
+		mutex_unlock(&power_state_chagne);
+	}
+}
+
+#elif defined(CONFIG_ESD_ERR_FG_RECOVERY)
+extern void esd_recovery(void)
+{
+	struct msm_fb_data_type *mfd;
+	u32 tmp, tmp2;
+	pr_info("esd_recovery + \n");
+
+	if (pdev_for_esd) {
+		mfd = platform_get_drvdata(pdev_for_esd);
+
+		if (!mdp_fb_is_power_off(mfd) == TRUE) {
+			mutex_lock(&power_state_chagne);
+
+			panel_next_off(pdev_for_esd);
+
+			if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+				mipi_dsi_pdata->active_reset(0); 
+
+#if !defined(CONFIG_FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT_PANEL)
+			if (mipi_dsi_pdata && mipi_dsi_pdata->panel_power_save)
+				mipi_dsi_pdata->panel_power_save(0);
+
+			msleep(100);
+
+			if (mipi_dsi_pdata && mipi_dsi_pdata->panel_power_save)
+				mipi_dsi_pdata->panel_power_save(1);
+#endif
+
+			// LP11 
+			tmp2 = tmp = MIPI_INP(MIPI_DSI_BASE + 0xA8);
+			tmp &= ~(1<<28);
+			MIPI_OUTP(MIPI_DSI_BASE + 0xA8, tmp);
+			wmb();
+			// LP11 
+
+			usleep(5000);
+			if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+				mipi_dsi_pdata->active_reset(1); 
+			msleep(10);
+/*			if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+				mipi_dsi_pdata->active_reset(0); 
+			msleep(10);
+	
+			if (mipi_dsi_pdata && mipi_dsi_pdata->active_reset)
+				mipi_dsi_pdata->active_reset(1); 
+			msleep(10);
+*/
+			MIPI_OUTP(MIPI_DSI_BASE + 0xA8, tmp2);
+			wmb();
+
+			panel_next_on(pdev_for_esd);
+			mipi_dsi_late_init(pdev_for_esd);
+
+			mutex_unlock(&power_state_chagne);
+		}
+	}
+	pr_info("esd_recovery - \n");
+}
+#endif
 
 static int mipi_dsi_resource_initialized;
 
@@ -491,6 +754,7 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 	pdata->on = mipi_dsi_on;
 	pdata->off = mipi_dsi_off;
 	pdata->fps_level_change = mipi_dsi_fps_level_change;
+	pdata->low_power_config = mipi_dsi_low_power_config;
 	pdata->late_init = mipi_dsi_late_init;
 	pdata->early_off = mipi_dsi_early_off;
 	pdata->next = pdev;
@@ -608,7 +872,11 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 	if (!mfd->cont_splash_done)
 		cont_splash_clk_ctrl(1);
 
-return 0;
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH)
+	register_mipi_dev(pdev);
+#endif
+
+	return 0;
 
 mipi_dsi_probe_err:
 	platform_device_put(mdp_dev);

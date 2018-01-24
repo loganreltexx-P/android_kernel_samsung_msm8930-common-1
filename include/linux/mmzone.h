@@ -151,6 +151,7 @@ enum zone_stat_item {
 #endif
 	NR_ANON_TRANSPARENT_HUGEPAGES,
 	NR_FREE_CMA_PAGES,
+	NR_SWAPCACHE,
 	NR_VM_ZONE_STAT_ITEMS };
 
 /*
@@ -377,14 +378,7 @@ struct zone {
 	 * free areas of different sizes
 	 */
 	spinlock_t		lock;
-#if defined CONFIG_COMPACTION || defined CONFIG_CMA
-	/* Set to true when the PG_migrate_skip bits should be cleared */
-	bool			compact_blockskip_flush;
-
-	/* pfns where compaction scanners should start */
-	unsigned long		compact_cached_free_pfn;
-	unsigned long		compact_cached_migrate_pfn;
-#endif
+	int                     all_unreclaimable; /* All pages pinned */
 #ifdef CONFIG_MEMORY_HOTPLUG
 	/* see spanned/present_pages for more description */
 	seqlock_t		span_seqlock;

@@ -256,6 +256,19 @@ static int tsens_tz_get_mode(struct thermal_zone_device *thermal,
 	return 0;
 }
 
+static ssize_t show_temp(struct device *dev, struct device_attribute *attr,
+				   char *buf)
+{
+	struct tsens_device dev_temp;
+	unsigned long temp = 0;
+	dev_temp.sensor_num = 0;
+
+	tsens_get_temp(&dev_temp, &temp);
+	return snprintf(buf, 4, "%ld\n", temp*10);
+}
+
+static DEVICE_ATTR(curr_temp, S_IRUSR|S_IRGRP, show_temp, NULL);
+
 /* Function to enable the mode.
  * If the main sensor is disabled all the sensors are disable and
  * the clock is disabled.
@@ -508,10 +521,11 @@ static int tsens_tz_set_trip_temp(struct thermal_zone_device *thermal,
 	unsigned int reg_th, reg_cntl;
 	int code, hi_code, lo_code, code_err_chk;
 
-	code_err_chk = code = tsens_tz_degC_to_code(temp,
-					tm_sensor->sensor_num);
 	if (!tm_sensor || trip < 0)
 		return -EINVAL;
+
+	code_err_chk = code = tsens_tz_degC_to_code(temp,
+					tm_sensor->sensor_num);
 
 	lo_code = TSENS_THRESHOLD_MIN_CODE;
 	hi_code = TSENS_THRESHOLD_MAX_CODE;
@@ -965,7 +979,7 @@ int msm_tsens_early_init(struct tsens_platform_data *pdata)
 
 static int __devinit tsens_tm_probe(struct platform_device *pdev)
 {
-	int rc, i;
+	int rc, i, j;
 
 	if (!tmdev) {
 		pr_info("%s : TSENS early init not done.\n", __func__);
@@ -988,20 +1002,30 @@ static int __devinit tsens_tm_probe(struct platform_device *pdev)
 		}
 	}
 
+	rc = device_create_file(&pdev->dev, &dev_attr_curr_temp);
+	if (rc < 0) {
+		pr_err("[TSENS] Failed to create file (curr_temp)!\n");
+		goto fail;
+	}
+
+
 	rc = request_irq(TSENS_UPPER_LOWER_INT, tsens_isr,
 		IRQF_TRIGGER_RISING, "tsens_interrupt", tmdev);
 	if (rc < 0) {
 		pr_err("%s: request_irq FAIL: %d\n", __func__, rc);
-		for (i = 0; i < tmdev->tsens_num_sensor; i++)
-			thermal_zone_device_unregister(tmdev->sensor[i].tz_dev);
-		goto fail;
+		goto err_create_file_curr;
 	}
 	INIT_WORK(&tmdev->tsens_work, tsens_scheduler_fn);
 
 	pr_debug("%s: OK\n", __func__);
 	mb();
 	return 0;
+err_create_file_curr:
+	device_remove_file(&pdev->dev, &dev_attr_curr_temp);
 fail:
+	for (j = 0; j < i; j++)
+		thermal_zone_device_unregister(tmdev->sensor[j].tz_dev);
+
 	tsens_disable_mode();
 	kfree(tmdev);
 	tmdev = NULL;
@@ -1027,7 +1051,7 @@ static struct platform_driver tsens_tm_driver = {
 	.probe = tsens_tm_probe,
 	.remove = tsens_tm_remove,
 	.driver = {
-		.name = "tsens8960-tm",
+		.name = "msm8930-tmu",
 		.owner = THIS_MODULE,
 #ifdef CONFIG_PM
 		.pm	= &tsens_pm_ops,

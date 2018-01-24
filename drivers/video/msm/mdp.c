@@ -44,6 +44,15 @@
 #endif
 #include "mipi_dsi.h"
 
+#if defined(CONFIG_MDNIE_LITE_TUNING)
+#include "mdnie_lite_tuning.h"
+#endif
+
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
+/* Check if LCD was connected. */
+#include "mipi_samsung_oled.h"
+#endif
+
 uint32 mdp4_extn_disp;
 u32 mdp_iommu_max_map_size;
 static struct clk *mdp_clk;
@@ -64,7 +73,7 @@ static struct res_mmu_clk mdp_sec_mmu_clks[] = {
 int mdp_rev;
 int mdp_iommu_split_domain;
 u32 mdp_max_clk = 266667000;
-u64 mdp_max_bw = 2000000000;
+u64 mdp_max_bw = 3080000000UL;
 u32 mdp_bw_ab_factor = MDP4_BW_AB_DEFAULT_FACTOR;
 u32 mdp_bw_ib_factor = MDP4_BW_IB_DEFAULT_FACTOR;
 static struct platform_device *mdp_init_pdev;
@@ -164,6 +173,13 @@ static struct early_suspend early_suspend;
 static u32 mdp_irq;
 
 static uint32 mdp_prim_panel_type = NO_PANEL;
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH) || defined(CONFIG_ESD_ERR_FG_RECOVERY)
+extern struct mutex power_state_chagne;
+boolean mdp_shutdown_check = FALSE;
+#endif
+#ifdef CONFIG_SAMSUNG_HDMI_OFF_WORKAROUND
+boolean mdp_shutdown_check_for_hdmi = false;
+#endif
 #ifndef CONFIG_FB_MSM_MDP22
 
 #define MDP_HIST_LUT_SIZE (256)
@@ -541,7 +557,7 @@ error:
 }
 
 spinlock_t mdp_lut_push_lock;
-static int mdp_lut_i;
+int mdp_lut_i;
 
 static int mdp_lut_hw_update(struct fb_cmap *cmap)
 {
@@ -577,8 +593,8 @@ static int mdp_lut_hw_update(struct fb_cmap *cmap)
 	return 0;
 }
 
-static int mdp_lut_push;
-static int mdp_lut_push_i;
+int mdp_lut_push;
+int mdp_lut_push_i;
 static int mdp_lut_resume_needed;
 
 static void mdp_lut_status_restore(void)
@@ -1144,7 +1160,7 @@ int mdp_histogram_stop(struct fb_info *info, uint32_t block)
 
 	mgmt->mdp_is_hist_start = FALSE;
 
-	if (!mfd->panel_power_on) {
+	if (mdp_fb_is_power_off(mfd)) {
 		if (mgmt->hist != NULL) {
 			mgmt->hist = NULL;
 			complete(&mgmt->mdp_hist_comp);
@@ -1557,7 +1573,7 @@ u32 mdp_get_panel_framerate(struct msm_fb_data_type *mfd)
 
 	if (frame_rate == 0) {
 		frame_rate = DEFAULT_FRAME_RATE;
-		pr_debug("%s frame rate=%d is default\n", __func__, frame_rate);
+		pr_warn("%s frame rate=%d is default\n", __func__, frame_rate);
 	}
 	pr_debug("%s frame rate=%d total_pixel=%d, pixel_rate=%d\n", __func__,
 		frame_rate, total_pixel, pixel_rate);
@@ -1842,9 +1858,7 @@ void mdp_clk_ctrl(int on)
 			mdp_clk_cnt--;
 			if (mdp_clk_cnt == 0)
 				mdp_clk_disable_unprepare();
-		} else
-			pr_err("%s: %d: mdp clk off is invalid\n",
-			       __func__, __LINE__);
+		}
 	}
 	pr_debug("%s: on=%d cnt=%d\n", __func__, on, mdp_clk_cnt);
 	mutex_unlock(&mdp_suspend_mutex);
@@ -2164,7 +2178,7 @@ irqreturn_t mdp_isr(int irq, void *ptr)
 
 		/* DMA_E LCD-Out Complete */
 		if (mdp_interrupt & MDP_DMA_E_DONE) {
-			dma = &dma_s_data;
+			dma = &dma_e_data;
 			dma->busy = FALSE;
 			mdp_pipe_ctrl(MDP_DMA_E_BLOCK, MDP_BLOCK_POWER_OFF,
 									TRUE);
@@ -2261,9 +2275,11 @@ static void mdp_drv_init(void)
 
 	dma_s_data.busy = FALSE;
 	dma_s_data.waiting = FALSE;
+	dma_s_data.dmap_busy = FALSE;
 	init_completion(&dma_s_data.comp);
 	sema_init(&dma_s_data.mutex, 1);
 
+	mutex_init(&dma_s_data.ov_mutex);
 #ifndef CONFIG_FB_MSM_MDP303
 	dma_e_data.busy = FALSE;
 	dma_e_data.waiting = FALSE;
@@ -2324,6 +2340,9 @@ static void mdp_drv_init(void)
 }
 
 static int mdp_probe(struct platform_device *pdev);
+#ifdef CONFIG_MDP_SHUTDOWN
+static void mdp_shutdown(struct platform_device *pdev);
+#endif
 static int mdp_remove(struct platform_device *pdev);
 
 static int mdp_runtime_suspend(struct device *dev)
@@ -2351,7 +2370,11 @@ static struct platform_driver mdp_driver = {
 	.suspend = mdp_suspend,
 	.resume = NULL,
 #endif
+#ifdef CONFIG_MDP_SHUTDOWN
+	.shutdown = mdp_shutdown,
+#else
 	.shutdown = NULL,
+#endif
 	.driver = {
 		/*
 		 * Driver name must match the device name added in
@@ -2374,14 +2397,22 @@ static int mdp_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
 
 	pr_debug("%s:+\n", __func__);
+	if (mdp_fb_is_power_on_lp(mfd)) {
+		pr_debug("panel not turned off. keeping overlay on\n");
+		ret = panel_next_low_power_config(pdev, true);
+		return ret;
+	}
 	mdp_histogram_ctrl_all(FALSE);
 	atomic_set(&vsync_cntrl.suspend, 1);
 	atomic_set(&vsync_cntrl.vsync_resume, 0);
 	complete_all(&vsync_cntrl.vsync_wait);
 
 	mdp_clk_ctrl(1);
+
 	mdp_lut_status_backup();
-	ret = panel_next_early_off(pdev);
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+	ret = panel_next_off(pdev);
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
 	if (mfd->panel.type == MIPI_CMD_PANEL)
 		mdp4_dsi_cmd_off(pdev);
@@ -2390,18 +2421,12 @@ static int mdp_off(struct platform_device *pdev)
 	else if (mfd->panel.type == HDMI_PANEL ||
 			mfd->panel.type == LCDC_PANEL ||
 			mfd->panel.type == LVDS_PANEL)
-		mdp4_lcdc_off(pdev);
+		mdp4_lcdc_off(pdev);	
 	else if (mfd->panel.type == WRITEBACK_PANEL)
-		mdp4_overlay_writeback_off(pdev);
+		mdp4_overlay_writeback_off(pdev);		  
 
-	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-	ret = panel_next_off(pdev);
-	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
 	mdp_clk_ctrl(0);
-#ifdef CONFIG_MSM_BUS_SCALING
-	mdp_bus_scale_update_request(0, 0, 0, 0);
-#endif
 	pr_debug("%s:-\n", __func__);
 	return ret;
 }
@@ -2423,29 +2448,12 @@ static int mdp_bus_scale_restore_request(void);
 static int mdp_on(struct platform_device *pdev)
 {
 	int ret = 0;
+	unsigned long flag;
 	struct msm_fb_data_type *mfd;
 	int i;
 	mfd = platform_get_drvdata(pdev);
 
 	pr_debug("%s:+\n", __func__);
-
-	if (!(mfd->cont_splash_done)) {
-		if (mfd->panel.type == MIPI_VIDEO_PANEL)
-			mdp4_dsi_video_splash_done();
-
-		/* Clks are enabled in probe.
-		Disabling clocks now */
-		mdp_clk_ctrl(0);
-		mfd->cont_splash_done = 1;
-	}
-
-	if(mfd->index == 0)
-		mdp_iommu_max_map_size = mfd->max_map_size;
-	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-
-	ret = panel_next_on(pdev);
-	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-
 
 	if (mdp_rev >= MDP_REV_40) {
 		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
@@ -2483,12 +2491,34 @@ static int mdp_on(struct platform_device *pdev)
 		atomic_set(&vsync_cntrl.suspend, 1);
 	}
 
+    ret = panel_next_low_power_config(pdev, false);
+
+	if(mfd->index == 0)
+		mdp_iommu_max_map_size = mfd->max_map_size;
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+
+	ret = panel_next_on(pdev);
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
+	
+	mdp4_overlay_dsi_video_start();
+
+	spin_lock_irqsave(&mdp_spin_lock, flag); 
+	outp32(MDP_INTR_CLEAR, 0xffffffff); 
+	spin_unlock_irqrestore(&mdp_spin_lock, flag); 
+
 	mdp_histogram_ctrl_all(TRUE);
+	mdp_restore_rgb();
 
 	if (ret == 0)
 		ret = panel_next_late_init(pdev);
 
-	pr_debug("%s:-\n", __func__);
+#if defined(CONFIG_MDNIE_LITE_TUNING)
+#if !defined(CONFIG_FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT_PANEL)
+		is_negative_on();
+#endif
+#endif
+
+	pr_info("%s:-\n", __func__);
 
 	return ret;
 }
@@ -2559,6 +2589,7 @@ void mdp_hw_version(void)
  *    Entry 0 hold 0 request
  *    Entry 1 and 2 do ping pong request
  */
+
 static struct msm_bus_vectors mdp_bus_init_vectors[] = {
 	MDP_BUS_VECTOR_ENTRY_P0(0, 0),
 	MDP_BUS_VECTOR_ENTRY_P1(0, 0),
@@ -2593,16 +2624,17 @@ static struct msm_bus_scale_pdata mdp_bus_scale_table = {
 	.num_usecases = ARRAY_SIZE(mdp_bus_usecases),
 	.name = "mdp",
 };
+
 static uint32_t mdp_bus_scale_handle;
 static int mdp_bus_scale_register(void)
 {
 	struct msm_bus_scale_pdata *bus_pdata = &mdp_bus_scale_table;
 	if (!mdp_bus_scale_handle) {
 		mdp_bus_scale_handle = msm_bus_scale_register_client(bus_pdata);
-		if (!mdp_bus_scale_handle) {
-			pr_err("%s: not able to get bus scale!\n", __func__);
-			return -ENOMEM;
-		}
+		if (!mdp_bus_scale_handle) {									
+			pr_err("%s: not able to get bus scale!\n", __func__);			
+			return -ENOMEM; 												
+		}																
 	}
 	return 0;
 }
@@ -2809,7 +2841,29 @@ static int mdp_irq_clk_setup(struct platform_device *pdev,
 	}
 	return 0;
 }
+#ifdef CONFIG_MDP_SHUTDOWN
+static void mdp_shutdown(struct platform_device *pdev)
+{
+	struct msm_fb_data_type *mfd = platform_get_drvdata(pdev);
+	mfd = platform_get_drvdata(pdev);
 
+	if (!mfd)
+		return;
+
+	pr_info("%s: panel_next_off seq\n", __func__);
+#ifdef CONFIG_SAMSUNG_HDMI_OFF_WORKAROUND
+        mdp_shutdown_check_for_hdmi = true;
+#endif
+#if defined(CONFIG_MIPI_SAMSUNG_ESD_REFRESH) || defined(CONFIG_ESD_ERR_FG_RECOVERY)
+	mdp_shutdown_check = true;
+	mutex_lock(&power_state_chagne);
+	panel_next_off(pdev);
+	mutex_unlock(&power_state_chagne);
+#else
+	panel_next_off(pdev);
+#endif
+}
+#endif
 static int mdp_probe(struct platform_device *pdev)
 {
 	struct platform_device *msm_fb_dev = NULL;
@@ -2862,7 +2916,6 @@ static int mdp_probe(struct platform_device *pdev)
 			return rc;
 
 		mdp_hw_version();
-
 		/* initializing mdp hw */
 #ifdef CONFIG_FB_MSM_MDP40
 		if (!(mdp_pdata->cont_splash_enabled))
@@ -2870,10 +2923,11 @@ static int mdp_probe(struct platform_device *pdev)
 #else
 		mdp_hw_init();
 #endif
-
 #ifdef CONFIG_FB_MSM_OVERLAY
 		mdp_hw_cursor_init();
 #endif
+		if (!(mdp_pdata->cont_splash_enabled))
+			mdp_clk_ctrl(0);
 		mdp_resource_initialized = 1;
 		return 0;
 	}
@@ -2931,8 +2985,14 @@ static int mdp_probe(struct platform_device *pdev)
 	}
 
 	if (mdp_pdata) {
-		if (mdp_pdata->cont_splash_enabled &&
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
+		if ((get_lcd_attached()) && mdp_pdata->cont_splash_enabled &&
 				 mfd->panel_info.pdest == DISPLAY_1) {
+#else
+		if ( mdp_pdata->cont_splash_enabled &&
+				 mfd->panel_info.pdest == DISPLAY_1) {
+
+#endif
 			char *cp;
 			uint32 bpp = 3;
 			/*read panel wxh and calculate splash screen
@@ -2973,6 +3033,10 @@ static int mdp_probe(struct platform_device *pdev)
 
 			MDP_OUTP(MDP_BASE + 0x90008,
 					mfd->copy_splash_phys);
+
+			// add clock off only for cmd mode
+			if (mfd->panel_info.type == MIPI_CMD_PANEL)
+				mdp_clk_ctrl(0);
 		}
 
 		mfd->cont_splash_done = (1 - mdp_pdata->cont_splash_enabled);
@@ -3281,7 +3345,6 @@ static int mdp_probe(struct platform_device *pdev)
 				     mdp_max_bw,
 				     mdp_max_bw);
 #endif
-
 	/* set driver data */
 	platform_set_drvdata(msm_fb_dev, mfd);
 
@@ -3318,6 +3381,10 @@ static int mdp_probe(struct platform_device *pdev)
 			mfd->vsync_sysfs_created = 1;
 		}
 	}
+
+#if defined(CONFIG_FB_MSM_CAMERA_CSC)
+	mdp4_reg_csc_fs(mfd->fbi->dev);
+#endif
 	return 0;
 
       mdp_probe_err:
@@ -3325,7 +3392,7 @@ static int mdp_probe(struct platform_device *pdev)
 #ifdef CONFIG_MSM_BUS_SCALING
 	if (mdp_bus_scale_handle > 0) {
 		msm_bus_scale_unregister_client(mdp_bus_scale_handle);
-		mdp_bus_scale_handle = 0;
+		mdp_bus_scale_handle = 0; 
 	}
 #endif
 	return rc;
@@ -3458,7 +3525,7 @@ static int mdp_remove(struct platform_device *pdev)
 #ifdef CONFIG_MSM_BUS_SCALING
 	if (mdp_bus_scale_handle > 0) {
 		msm_bus_scale_unregister_client(mdp_bus_scale_handle);
-		mdp_bus_scale_handle = 0;
+		mdp_bus_scale_handle = 0; 
 	}
 #endif
 	return 0;

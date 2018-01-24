@@ -31,6 +31,7 @@
 #include "msm_fb.h"
 #include "hdmi_msm.h"
 #include "mdp4.h"
+#include "hdmi_msm.h"
 
 #define DTV_BASE	0xD0000
 
@@ -72,6 +73,7 @@ static struct vsycn_ctrl {
 	int dmae_intr_cnt;
 	atomic_t suspend;
 	int dmae_wait_cnt;
+	int wait_vsync_cnt;
 	int blt_change;
 	int sysfs_created;
 	struct mutex update_lock;
@@ -279,7 +281,6 @@ int mdp4_dtv_pipe_commit(int cndx, int wait)
 			pipe->pipe_used = 0; /* clear */
 		}
 	}
-
 	pipe = vctrl->base_pipe;
 	spin_lock_irqsave(&vctrl->spin_lock, flags);
 	if (pipe->ov_blt_addr) {
@@ -316,19 +317,20 @@ static void mdp4_dtv_vsync_irq_ctrl(int cndx, int enable)
 	if (enable) {
 		if (vsync_irq_cnt == 0)
 			vsync_irq_enable(INTR_EXTERNAL_VSYNC,
-						MDP_EXTER_VSYNC_TERM);
+			MDP_EXTER_VSYNC_TERM);
 		vsync_irq_cnt++;
-	} else {
+		} else {
 		if (vsync_irq_cnt) {
 			vsync_irq_cnt--;
 			if (vsync_irq_cnt == 0)
 				vsync_irq_disable(INTR_EXTERNAL_VSYNC,
-						MDP_EXTER_VSYNC_TERM);
+				MDP_EXTER_VSYNC_TERM);
 		}
 	}
 	pr_debug("%s: enable=%d cnt=%d\n", __func__, enable, vsync_irq_cnt);
 	mutex_unlock(&vctrl->update_lock);
 }
+
 
 void mdp4_dtv_vsync_ctrl(struct fb_info *info, int enable)
 {
@@ -348,14 +350,12 @@ void mdp4_dtv_vsync_ctrl(struct fb_info *info, int enable)
 	vctrl->vsync_irq_enabled = enable;
 
 	mdp4_dtv_vsync_irq_ctrl(cndx, enable);
-
 }
 
 void mdp4_dtv_wait4vsync(int cndx)
 {
 	struct vsycn_ctrl *vctrl;
 	struct mdp4_overlay_pipe *pipe;
-	int ret;
 
 	if (cndx >= MAX_CONTROLLER) {
 		pr_err("%s: out or range: cndx=%d\n", __func__, cndx);
@@ -370,13 +370,12 @@ void mdp4_dtv_wait4vsync(int cndx)
 
 	mdp4_dtv_vsync_irq_ctrl(cndx, 1);
 
-	ret = wait_event_interruptible_timeout(vctrl->wait_queue, 1,
+	wait_event_interruptible_timeout(vctrl->wait_queue, 1,
 			msecs_to_jiffies(VSYNC_PERIOD * 8));
-	if (ret <= 0)
-		pr_err("%s timeout ret=%d", __func__, ret);
 
 	mdp4_dtv_vsync_irq_ctrl(cndx, 0);
 	mdp4_stat.wait4vsync1++;
+	
 }
 
 static void mdp4_dtv_wait4dmae(int cndx)
@@ -420,7 +419,6 @@ ssize_t mdp4_dtv_show_event(struct device *dev,
 	buf[strlen(buf) + 1] = '\0';
 	return ret;
 }
-
 void mdp4_dtv_vsync_init(int cndx)
 {
 	struct vsycn_ctrl *vctrl;
@@ -617,6 +615,14 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	vctrl->dev = mfd->fbi->dev;
 	vctrl->vsync_irq_enabled = 0;
 
+#if defined(CONFIG_VIDEO_MHL_V2)
+	if (!hdmi_msm_state->hpd_on_offline) {
+		pr_info("hdmi_online is not\n");
+		mutex_unlock(&mfd->dma->ov_mutex);
+		return -ENODEV;
+	}
+#endif
+
 	mdp_footswitch_ctrl(TRUE);
 	/* Mdp clock enable */
 	mdp_clk_ctrl(1);
@@ -654,7 +660,8 @@ static void mdp4_dtv_tg_off(struct vsycn_ctrl *vctrl)
 	spin_lock_irqsave(&vctrl->spin_lock, flags);
 	MDP_OUTP(MDP_BASE + DTV_BASE, 0); /* turn off timing generator */
 	spin_unlock_irqrestore(&vctrl->spin_lock, flags);
-	msleep(20);
+
+	mdp4_dtv_wait4vsync(0);
 }
 
 int mdp4_dtv_off(struct platform_device *pdev)
@@ -669,6 +676,13 @@ int mdp4_dtv_off(struct platform_device *pdev)
 	int mixer = 0;
 
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
+	
+#if defined(CONFIG_VIDEO_MHL_V2)
+			if (hdmi_msm_state->hpd_on_offline) {
+					pr_info("hpd_offline is not\n");
+					return -ENODEV;
+			}
+#endif
 
 	mutex_lock(&mfd->dma->ov_mutex);
 
@@ -695,6 +709,7 @@ int mdp4_dtv_off(struct platform_device *pdev)
 			mdp4_overlay_pipe_free(pipe, 1);
 			vctrl->base_pipe = NULL;
 		}
+		mdp4_dtv_wait4vsync(cndx);
 	}
 
 	mdp4_dtv_tg_off(vctrl);
@@ -1115,7 +1130,7 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 	struct mdp4_overlay_pipe *pipe;
 
 	mutex_lock(&mfd->dma->ov_mutex);
-	if (!mfd->panel_power_on) {
+	if (mdp_fb_is_power_off(mfd)) {
 		mutex_unlock(&mfd->dma->ov_mutex);
 		return;
 	}

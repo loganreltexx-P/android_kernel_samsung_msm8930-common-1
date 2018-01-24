@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,6 +15,9 @@
 
 #include <linux/errno.h>
 #include <linux/power_supply.h>
+#ifdef CONFIG_PM8921_SEC_CHARGER
+#include <linux/mfd/pm8xxx/pm8921-sec-charger.h>
+#endif
 
 #define PM8921_CHARGER_DEV_NAME	"pm8921-charger"
 
@@ -22,6 +25,26 @@ struct pm8xxx_charger_core_data {
 	unsigned int	vbat_channel;
 	unsigned int	batt_temp_channel;
 	unsigned int	batt_id_channel;
+};
+
+enum cable_type_t {
+	CABLE_TYPE_NONE = 0,
+	CABLE_TYPE_USB,
+	CABLE_TYPE_AC,
+	CABLE_TYPE_MISC,
+	CABLE_TYPE_CARDOCK,
+	CABLE_TYPE_UARTOFF,
+	CABLE_TYPE_JIG,
+	CABLE_TYPE_UNKNOWN,
+	CABLE_TYPE_CDP,
+	CABLE_TYPE_SMART_DOCK,
+	CABLE_TYPE_OTG,
+	CABLE_TYPE_AUDIO_DOCK,
+#ifdef CONFIG_WIRELESS_CHARGING
+	CABLE_TYPE_WPC,
+#endif
+	CABLE_TYPE_INCOMPATIBLE,
+	CABLE_TYPE_DESK_DOCK,
 };
 
 enum pm8921_chg_cold_thr {
@@ -58,10 +81,13 @@ enum pm8921_chg_led_src_config {
 
 /**
  * struct pm8921_charger_platform_data -
+ * @safety_time:	max charging time in minutes incl. fast and trkl
  *			valid range 4 to 512 min. PON default 120 min
  * @ttrkl_time:		max trckl charging time in minutes
  *			valid range 1 to 64 mins. PON default 15 min
  * @update_time:	how often the userland be updated of the charging (msec)
+ * @sleep_update_time:	how often the userland be updated of the charging
+ *			in sleep (sec)
  * @alarm_low_mv:	the voltage (mV) when low battery alarm is triggered
  * @alarm_high_mv:	the voltage (mV) when high battery alarm is triggered
  * @max_voltage:	the max voltage (mV) the battery should be charged up to
@@ -145,19 +171,22 @@ enum pm8921_chg_led_src_config {
  */
 struct pm8921_charger_platform_data {
 	struct pm8xxx_charger_core_data	charger_cdata;
+	unsigned int			safety_time;
 	unsigned int			ttrkl_time;
 	unsigned int			update_time;
+	unsigned int			sleep_update_time;
 	unsigned int			max_voltage;
 	unsigned int			min_voltage;
 	unsigned int			uvd_thresh_voltage;
 	unsigned int			safe_current_ma;
 	unsigned int			alarm_low_mv;
 	unsigned int			alarm_high_mv;
-	unsigned int			resume_voltage_delta;
+	/* disable VBATDET for improper FSB state as 1(On high) */
+	int				resume_voltage_delta;
 	int				resume_charge_percent;
 	unsigned int			term_current;
-	int				cool_temp;
-	int				warm_temp;
+	int					cool_temp;
+	int					warm_temp;
 	unsigned int			temp_check_period;
 	unsigned int			max_bat_chg_current;
 	unsigned int			usb_max_current;
@@ -165,22 +194,27 @@ struct pm8921_charger_platform_data {
 	unsigned int			warm_bat_chg_current;
 	unsigned int			cool_bat_voltage;
 	unsigned int			warm_bat_voltage;
-	int				hysteresis_temp;
 	unsigned int			(*get_batt_capacity_percent) (void);
 	int64_t				batt_id_min;
 	int64_t				batt_id_max;
-	bool				keep_btm_on_suspend;
-	bool				has_dc_supply;
-	int				trkl_voltage;
-	int				weak_voltage;
-	int				trkl_current;
-	int				weak_current;
-	int				vin_min;
-	int				*thermal_mitigation;
-	int				thermal_levels;
-	enum pm8921_chg_cold_thr	cold_thr;
-	enum pm8921_chg_hot_thr		hot_thr;
-	int				rconn_mohm;
+	bool					keep_btm_on_suspend;
+	bool					dc_unplug_check;
+	bool					has_dc_supply;
+	int					trkl_voltage;
+	int					weak_voltage;
+	int					trkl_current;
+	int					weak_current;
+	int					vin_min;
+	int					*thermal_mitigation;
+	int					thermal_levels;
+	/* event set */
+	unsigned int			event;
+	unsigned int			event_wait;
+	ktime_t				last_event_time;
+
+	enum pm8921_chg_cold_thr			cold_thr;
+	enum pm8921_chg_hot_thr			hot_thr;
+	int					rconn_mohm;
 	enum pm8921_chg_led_src_config	led_src_config;
 	int				battery_less_hardware;
 	int				btc_override;
@@ -189,8 +223,16 @@ struct pm8921_charger_platform_data {
 	int				btc_delay_ms;
 	int				btc_panic_if_cant_stop_chg;
 	int				stop_chg_upon_expiry;
-	bool				disable_chg_rmvl_wrkarnd;
-	bool				enable_tcxo_warmup_delay;
+#if defined(CONFIG_PM8921_SEC_CHARGER)
+	int		(*get_cable_type)(void);
+	int		(*get_board_rev)(void);
+	bool	(*get_lpm_mode)(void);
+	int	wc_w_gpio;
+	int	wpc_acok;
+	void		(*wpc_int_init)(void);
+#endif
+	struct pm8921_sec_battery_data *batt_pdata;
+
 };
 
 enum pm8921_charger_source {

@@ -52,6 +52,7 @@ snd-soc-wcd9304-objs := wcd9304.o wcd9304-tables.o
 snd-soc-wcd9310-objs := wcd9310.o wcd9310-tables.o
 snd-soc-cs8427-objs := cs8427.o
 snd-soc-wcd9320-objs := wcd9320.o wcd9320-tables.o
+snd-soc-wcd9306-objs := wcd9306.o wcd9306-tables.o wcd9xxx-resmgr.o wcd9xxx-common.o
 snd-soc-wl1273-objs := wl1273.o
 snd-soc-wm1250-ev1-objs := wm1250-ev1.o
 snd-soc-wm2000-objs := wm2000.o

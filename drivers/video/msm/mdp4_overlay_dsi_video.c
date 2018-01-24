@@ -37,6 +37,15 @@
 
 #include <mach/iommu_domains.h>
 
+#if defined(CONFIG_MACH_LT02_CHN_CTC)
+#include <linux/gpio.h>
+#endif
+
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
+/* Check if LCD was connected. */
+#include "mipi_samsung_oled.h"
+#endif
+
 #define DSI_VIDEO_BASE	0xE0000
 
 static int first_pixel_start_x;
@@ -96,7 +105,7 @@ static void vsync_irq_disable(int intr, int term)
 	pr_debug("%s: IRQ-dis done, term=%x\n", __func__, term);
 }
 
-static void mdp4_overlay_dsi_video_start(void)
+void mdp4_overlay_dsi_video_start(void)
 {
 	if (!dsi_video_enabled) {
 		/* enable DSI block */
@@ -174,6 +183,9 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 	struct mdp4_overlay_pipe *real_pipe;
 	unsigned long flags;
 	int cnt = 0;
+#ifdef MDP_ODD_RESOLUTION_CTRL
+	int current_pipe_ndx = 0;
+#endif
 
 	vctrl = &vsync_ctrl_db[cndx];
 
@@ -192,10 +204,10 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 	mdp_update_pm(vctrl->mfd, vctrl->vsync_time);
 
 	/*
-	 * allow stage_commit without pipes queued
-	 * (vp->update_cnt == 0) to unstage pipes after
-	 * overlay_unset
-	 */
+	* allow stage_commit without pipes queued
+	* (vp->update_cnt == 0) to unstage pipes after
+	* overlay_unset
+	*/
 
 	vctrl->update_ndx++;
 	vctrl->update_ndx &= 0x01;
@@ -206,6 +218,7 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 			mdp4_free_writeback_buf(vctrl->mfd, mixer);
 	}
 	mutex_unlock(&vctrl->update_lock);
+
 
 	spin_lock_irqsave(&vctrl->spin_lock, flags);
 	if (vctrl->ov_koff != vctrl->ov_done) {
@@ -229,7 +242,7 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 				 */
 				mdp4_overlay_vsync_commit(pipe);
 			}
-		}
+ 		}
 	}
 
 	mdp4_mixer_stage_commit(mixer);
@@ -255,12 +268,14 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 	pipe = vp->plist;
 	for (i = 0; i < OVERLAY_PIPE_MAX; i++, pipe++) {
 		if (pipe->pipe_used) {
-			/* free previous iommu to freelist
-			* which will be freed at next
-			* pipe_commit
-			*/
-			mdp4_overlay_iommu_pipe_free(pipe->pipe_ndx, 0);
-			pipe->pipe_used = 0; /* clear */
+
+		
+		/* free previous iommu to freelist
+		* which will be freed at next
+		* pipe_commit
+		*/
+		mdp4_overlay_iommu_pipe_free(pipe->pipe_ndx, 0);
+		pipe->pipe_used = 0; /* clear */
 		}
 	}
 
@@ -287,10 +302,15 @@ int mdp4_dsi_video_pipe_commit(int cndx, int wait)
 		else
 			mdp4_dsi_video_wait4vsync(0);
 	}
+#ifdef MDP_ODD_RESOLUTION_CTRL
+	current_pipe_ndx = pipe->pipe_ndx;
+	for (i = current_pipe_ndx ; i >= 0; i--, pipe--) {
+		pipe->check_odd_res = 0;
+	}
+#endif
 
 	return cnt;
 }
-
 static void mdp4_video_vsync_irq_ctrl(int cndx, int enable)
 {
 	struct vsycn_ctrl *vctrl;
@@ -361,7 +381,9 @@ void mdp4_dsi_video_wait4vsync(int cndx)
 		pr_err("%s timeout ret=%d", __func__, ret);
 
 	mdp4_video_vsync_irq_ctrl(cndx, 0);
+	
 	mdp4_stat.wait4vsync0++;
+
 }
 
 static void mdp4_dsi_video_wait4dmap(int cndx)
@@ -377,7 +399,6 @@ static void mdp4_dsi_video_wait4dmap(int cndx)
 
 	if (atomic_read(&vctrl->suspend) > 0)
 		return;
-
 	wait_for_completion(&vctrl->dmap_comp);
 }
 
@@ -400,6 +421,27 @@ static void mdp4_dsi_video_wait4dmap_done(int cndx)
 	mdp4_dsi_video_wait4dmap(cndx);
 }
 
+void mdp4_dsi_video_wait4dmap_for_dsi(int cndx)
+{
+	unsigned long flags;
+	struct vsycn_ctrl *vctrl;
+
+	if (cndx >= MAX_CONTROLLER) {
+		pr_err("%s: out or range: cndx=%d\n", __func__, cndx);
+		return;
+	}
+	vctrl = &vsync_ctrl_db[cndx];
+
+	if (mdp_intr_mask & INTR_DMA_P_DONE)
+		mdp4_dsi_video_wait4dmap(cndx);
+	else {
+		spin_lock_irqsave(&vctrl->spin_lock, flags);
+		INIT_COMPLETION(vctrl->dmap_comp);
+		vsync_irq_enable(INTR_DMA_P_DONE, MDP_DMAP_TERM);
+		spin_unlock_irqrestore(&vctrl->spin_lock, flags);
+		mdp4_dsi_video_wait4dmap(cndx);
+	}
+}
 
 static void mdp4_dsi_video_wait4ov(int cndx)
 {
@@ -531,6 +573,12 @@ int mdp4_dsi_video_splash_done(void)
 	return 0;
 }
 
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT)
+void pull_reset_low(void);
+#endif
+#if defined(CONFIG_MACH_LT02_CHN_CTC)
+static int first_boot = 1;
+#endif
 int mdp4_dsi_video_on(struct platform_device *pdev)
 {
 	int dsi_width;
@@ -575,6 +623,22 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 	struct vsycn_ctrl *vctrl;
 	struct msm_panel_info *pinfo;
 
+#if defined(CONFIG_MACH_LT02_CHN_CTC)  //hide flash screen
+         if(first_boot == 1){
+
+		gpio_tlmm_config(GPIO_CFG(2, 0, GPIO_CFG_OUTPUT,
+			                        GPIO_CFG_NO_PULL, GPIO_CFG_2MA),	GPIO_CFG_ENABLE);  //LCD Enable
+		gpio_tlmm_config(GPIO_CFG(80, 0, GPIO_CFG_OUTPUT,
+						GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 	GPIO_CFG_ENABLE); //LCD Power enable
+		gpio_tlmm_config(GPIO_CFG(47, 0, GPIO_CFG_OUTPUT,
+						GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 	GPIO_CFG_ENABLE); //LVDS Power enable
+
+		gpio_set_value(2, 0);
+		gpio_set_value(80, 0);
+		gpio_set_value(47, 0);
+		first_boot = 0;
+	}
+#endif
 	vctrl = &vsync_ctrl_db[cndx];
 	mfd = (struct msm_fb_data_type *)platform_get_drvdata(pdev);
 	pinfo = &mfd->panel_info;
@@ -585,6 +649,10 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 	if (mfd->key != MFD_KEY)
 		return -EINVAL;
 
+#if defined (CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT)
+	if (get_lcd_attached() == 0)
+		return -ENODEV;
+#endif
 	mutex_lock(&mfd->dma->ov_mutex);
 
 	vctrl->mfd = mfd;
@@ -633,6 +701,22 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 
 	atomic_set(&vctrl->suspend, 0);
 
+#if defined(CONFIG_FEATURE_FLIPLR)
+	pipe->mfd = mfd;
+#endif
+/* QC Patch for LCD black out Issue */
+	if (!(mfd->cont_splash_done)) {
+#if defined(CONFIG_FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT)
+	pull_reset_low();
+#endif
+		mfd->cont_splash_done = 1;
+		mdp4_dsi_video_tg_off(vctrl);
+		mipi_dsi_controller_cfg(0);
+		/* Clks are enabled in probe.
+		   Disabling clocks now */
+		mdp_clk_ctrl(0);
+	}
+	
 	pipe->src_height = fbi->var.yres;
 	pipe->src_width = fbi->var.xres;
 	pipe->src_h = fbi->var.yres;
@@ -643,6 +727,10 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 	pipe->dst_w = fbi->var.xres;
 	pipe->srcp0_ystride = fbi->fix.line_length;
 	pipe->bpp = bpp;
+
+	/* there is no FB, so we need to set it until we get data from surfaceFlinger */
+	if (!use_frame_buffer)
+		pipe->solid_fill = 1;
 
 	if (mfd->display_iova)
 		pipe->srcp0_addr = mfd->display_iova + buf_offset;
@@ -660,6 +748,11 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 	mdp4_overlay_dmap_xy(pipe);	/* dma_p */
 	mdp4_overlay_dmap_cfg(mfd, 1);
 	mdp4_overlay_rgb_setup(pipe);
+
+	/* Solid_fill clear after booting */
+	if (!use_frame_buffer)
+		pipe->solid_fill = 0;
+
 	mdp4_overlayproc_cfg(pipe);
 
 	mdp4_overlay_reg_flush(pipe, 1);
@@ -744,8 +837,8 @@ int mdp4_dsi_video_on(struct platform_device *pdev)
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
 	mdp_histogram_ctrl_all(TRUE);
-	mdp4_overlay_dsi_video_start();
 	mutex_unlock(&mfd->dma->ov_mutex);
+//	mdp4_overlay_dsi_video_start();
 
 	return ret;
 }
@@ -769,6 +862,9 @@ int mdp4_dsi_video_off(struct platform_device *pdev)
 	pipe = vctrl->base_pipe;
 
 	mdp4_dsi_video_wait4vsync(cndx);
+
+	if (pipe == NULL)
+		return -EINVAL;
 
 	if (pipe->ov_blt_addr) {
 		spin_lock_irqsave(&vctrl->spin_lock, flags);
@@ -799,15 +895,7 @@ int mdp4_dsi_video_off(struct platform_device *pdev)
 		mixer = pipe->mixer_num;
 		mdp4_overlay_unset_mixer(mixer);
 		if (mfd->ref_cnt == 0) {
-			/* adb stop */
-			if (pipe->pipe_type == OVERLAY_TYPE_BF)
-				mdp4_overlay_borderfill_stage_down(pipe);
-
-			/* base pipe may change after borderfill_stage_down */
-			pipe = vctrl->base_pipe;
-			mdp4_mixer_stage_down(pipe, 1);
-			mdp4_overlay_pipe_free(pipe, 1);
-			vctrl->base_pipe = NULL;
+			mdp4_dsi_video_free_base_pipe(mfd);
 		} else {
 			/* system suspending */
 			mdp4_mixer_stage_down(vctrl->base_pipe, 1);
@@ -815,8 +903,6 @@ int mdp4_dsi_video_off(struct platform_device *pdev)
 				vctrl->base_pipe->pipe_ndx, 1);
 		}
 	}
-
-	mdp4_dsi_video_tg_off(vctrl);
 
 	atomic_set(&vctrl->suspend, 1);
 
@@ -993,6 +1079,7 @@ void mdp4_primary_vsync_dsi_video(void)
 {
 	int cndx;
 	struct vsycn_ctrl *vctrl;
+
 
 	cndx = 0;
 	vctrl = &vsync_ctrl_db[cndx];
@@ -1187,7 +1274,7 @@ void mdp4_dsi_video_overlay(struct msm_fb_data_type *mfd)
 	vctrl = &vsync_ctrl_db[cndx];
 	pipe = vctrl->base_pipe;
 
-	if (!pipe || !mfd->panel_power_on) {
+	if (!pipe || mdp_fb_is_power_off(mfd)) {
 		mutex_unlock(&mfd->dma->ov_mutex);
 		return;
 	}

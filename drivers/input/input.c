@@ -223,8 +223,10 @@ static void input_handle_event(struct input_dev *dev,
 	case EV_SYN:
 		switch (code) {
 		case SYN_CONFIG:
+			disposition = INPUT_PASS_TO_ALL;
 		case SYN_TIME_SEC:
 		case SYN_TIME_NSEC:
+			dev->sync = false;
 			disposition = INPUT_PASS_TO_ALL;
 			break;
 
@@ -1576,9 +1578,10 @@ void input_reset_device(struct input_dev *dev)
 		 * Keys that have been pressed at suspend time are unlikely
 		 * to be still pressed when we resume.
 		 */
-		spin_lock_irq(&dev->event_lock);
+
+		/* spin_lock_irq(&dev->event_lock);
 		input_dev_release_keys(dev);
-		spin_unlock_irq(&dev->event_lock);
+		spin_unlock_irq(&dev->event_lock); */
 	}
 
 	mutex_unlock(&dev->mutex);

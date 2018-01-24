@@ -1,5 +1,6 @@
 
 source "drivers/video/msm/vidc/Kconfig"
+source "drivers/video/msm/mhl_v2/Kconfig"
 
 config FB_MSM
 	tristate "MSM Framebuffer support"
@@ -101,6 +102,26 @@ config FB_MSM_MDP_NONE
 
 endchoice
 
+config MIPI_CLK_414
+	bool "Mipi Clk 414"
+	default n
+config MIPI_CLK_451
+	bool "Mipi Clk 451"
+	default n
+config FEATURE_FLIPLR
+	bool "FLIP LR feature"
+	default n
+config MIPI_LVDS_REDUCE_MODE
+	bool "Reduce mode"
+	default n
+
+config MIPI_CLK_487
+	bool "Mipi Clk 487"
+	default n
+
+config MIPI_CLK_500
+	bool "Mipi Clk 500"
+	default n
 config FB_MSM_EBI2
 	bool
 	default n
@@ -113,6 +134,11 @@ config FB_MSM_MIPI_DSI
 	bool
 	default n
 
+config DUAL_LCD
+	depends on FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT
+	bool "Folder Type android model"
+	default n
+
 config FB_MSM_LCDC
 	bool
 	default n
@@ -122,7 +148,7 @@ config FB_MSM_LVDS
 	default n
 
 config FB_MSM_OVERLAY
-	depends on FB_MSM_MDP40 && ANDROID_PMEM
+	depends on FB_MSM_MDP40
 	bool "MDP4 overlay support"
 	default n
 
@@ -207,7 +233,62 @@ config FB_MSM_MIPI_DSI_NT35510
 	bool
 	select FB_MSM_MIPI_DSI
 
+config FB_MSM_MIPI_DSI_AMS367_OLED
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_MAGNA_OLED
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_HIMAX_TFT
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_SAMSUNG_TFT
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config SAMSUNG_CMC624
+	bool "Support for integrated LCD controller in msm8930"
+	depends on FB && ARCH_MSM
+	default n
+
+config FB_EBOOK_PANEL_SCENARIO
+	bool "Samsung EBOOK PANEL SCENARIO"
+	depends on FB_MSM
+	depends on SAMSUNG_CMC624
+	default n
+
+config FB_MSM_MIPI_DSI_NOVATEK_NT35596
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
 config FB_MSM_MIPI_DSI_ORISE
+        bool
+        select FB_MSM_MIPI_DSI
+        default n
+
+config FB_MSM_MIPI_DSI_SAMSUNG_OLED
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_HX8389B_TFT
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_HX8389BDS15_TFT
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_DSI_HX8369B_TFT
         bool
         select FB_MSM_MIPI_DSI
         default n
@@ -229,6 +310,41 @@ config FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
 	  using a single LVDS link
 	  and up to WUXGA 1920x1200 18-bit
 	  using a dual LVDS link.
+
+config FB_MSM_MIPI_DSI_TOSHIBA_TC358762
+	bool
+	select FB_MSM_MIPI_DSI
+	default n
+
+config FB_MSM_MIPI_SAMSUNG_OLED_CMD_QHD_PT
+	bool
+	select FB_MSM_MIPI_DSI_SAMSUNG_OLED
+	default n
+
+config FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_TOSHIBA_TC358762
+	default n
+
+config FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT
+	bool
+	select FB_MSM_MIPI_DSI_SAMSUNG_OLED
+	default n
+
+config FB_MSM_MIPI_HX8389B_VIDEO_QHD_PT
+	bool
+	select FB_MSM_MIPI_DSI_HX8389B_TFT
+	default n
+
+config FB_MSM_MIPI_HX8389B_TFT_VIDEO_QHD_PT
+	bool
+	select FB_MSM_MIPI_DSI_HX8389BDS15_TFT
+	default n
+
+config FB_MSM_MIPI_HX8369B_VIDEO_WVGA_PT
+        bool
+        select FB_MSM_MIPI_DSI_HX8369B_TFT
+        default n
 
 config FB_MSM_LCDC_ST15_WXGA
     bool
@@ -346,6 +462,11 @@ config FB_MSM_MIPI_NOVATEK_CMD_QHD_PT
 	select FB_MSM_MIPI_DSI_NOVATEK
 	default n
 
+config FB_MSM_MIPI_NOVATEK_VIDEO_HD_PT
+	bool
+	select FB_MSM_MIPI_DSI_NOVATEK_NT35596
+	default n
+
 config FB_MSM_MIPI_ORISE_VIDEO_720P_PT
 	bool
 	select FB_MSM_MIPI_DSI_ORISE
@@ -376,6 +497,11 @@ config FB_MSM_MIPI_NT35510_CMD_WVGA_PT
 	select FB_MSM_MIPI_DSI_NT35510
 	default n
 
+config FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_SAMSUNG_OLED
+	default n
+
 config FB_MSM_MIPI_NT35516_VIDEO_QHD_PT
         bool
         select FB_MSM_MIPI_DSI_NT35516
@@ -390,11 +516,31 @@ config FB_MSM_MIPI_NT35590_CMD_720P_PT
         bool
         select FB_MSM_MIPI_DSI_NT35590
         default n
+config FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_AMS367_OLED
+	select DUAL_LCD
+	default n
+
+config FB_MSM_MIPI_MAGNA_OLED_VIDEO_WVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_MAGNA_OLED
+	default n
 
 config FB_MSM_MIPI_NT35590_VIDEO_720P_PT
         bool
         select FB_MSM_MIPI_DSI_NT35590
         default n
+
+config FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_HIMAX_TFT
+	default n
+
+config FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_QHD_PT
+	bool
+	select FB_MSM_MIPI_DSI_SAMSUNG_TFT
+	default n
 
 config FB_MSM_MIPI_CHIMEI_WXGA
 	bool "LVDS Chimei WXGA Panel using Toshiba MIPI DSI-to-LVDS bridge."
@@ -414,6 +560,10 @@ config FB_MSM_MIPI_CHIMEI_WUXGA
 	  The panel is connected to the host
 	  via Toshiba DSI-to-LVDS bridge.
 
+config FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WSVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
+	default n
 config FB_MSM_MIPI_TRULY_VIDEO_WVGA_PT
 	bool
 	select FB_MSM_MIPI_DSI_TRULY
@@ -562,6 +712,14 @@ config FB_MSM_MIPI_PANEL_DETECT
 	select FB_MSM_MIPI_TOSHIBA_VIDEO_WSVGA_PT
 	select FB_MSM_MIPI_TOSHIBA_VIDEO_WUXGA
 	select FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT
+	select FB_MSM_MIPI_SAMSUNG_OLED_CMD_QHD_PT
+	select FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT
+	select FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT
+	select FB_MSM_MIPI_HX8389B_VIDEO_QHD_PT
+	select FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT
+	select FB_MSM_MIPI_MAGNA_OLED_VIDEO_WVGA_PT
+	select FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT
+	select FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT
 	select FB_MSM_MIPI_RENESAS_CMD_FWVGA_PT
 	select FB_MSM_MIPI_TRULY_VIDEO_WVGA_PT
 	select FB_MSM_MIPI_NOVATEK_VIDEO_QHD_PT
@@ -577,6 +735,7 @@ config FB_MSM_MIPI_PANEL_DETECT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
 	select FB_MSM_MIPI_CHIMEI_WXGA
 	select FB_MSM_MIPI_CHIMEI_WUXGA
+	select FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WSVGA_PT
 	---help---
 	  Support for MIPI panel auto detect
 
@@ -617,6 +776,8 @@ config FB_MSM_LCDC_MIPI_PANEL_AUTO_DETECT
 	select FM_MSM_MIPI_NT35590_CMD_720P_PT
 	select FM_MSM_MIPI_NT35590_VIDEO_720P_PT
 	select FB_MSM_MIPI_SIMULATOR_VIDEO
+	select FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WSVGA_PT
+	select FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT
 	---help---
 	  Support for LCDC + MIPI panel auto detect
 
@@ -714,6 +875,61 @@ config FB_MSM_MIPI_RENESAS_CMD_FWVGA_PT_PANEL
 	bool "MIPI Renesas Command FWVGA PT Panel"
 	select FB_MSM_MIPI_RENESAS_CMD_FWVGA_PT
 
+config FB_MSM_MIPI_NOVATEK_VIDEO_HD_PT_PANEL
+	bool "MIPI NOVATEK VIDEO HD PT Panel"
+	select FB_MSM_MIPI_NOVATEK_VIDEO_HD_PT
+
+config FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT_PANEL
+	bool "MIPI AMS367 VIDEO WVGA PT Panel"
+	select FB_MSM_MIPI_AMS367_OLED_VIDEO_WVGA_PT
+
+ config FB_MSM_MIPI_MAGNA_OLED_VIDEO_WVGA_PT_PANEL
+	bool "MIPI MAGNA VIDEO WVGA PT Panel"
+	select FB_MSM_MIPI_MAGNA_OLED_VIDEO_WVGA_PT
+
+config FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT_PANEL
+	bool "MIPI HIMAX VIDEO WVGA PT Panel"
+	select FB_MSM_MIPI_HIMAX_TFT_VIDEO_WVGA_PT
+	---help---
+	  Support for Himanx LDI :HB8369-B
+	                   BOE panel
+
+config FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_QHD_PT_PANEL
+	bool "MIPI SAMSUNG TFT  VIDEO QHD PT Panel"
+	select FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_QHD_PT
+
+config FB_MSM_MIPI_SAMSUNG_OLED_CMD_QHD_PT_PANEL
+	bool "MIPI SAMSUNG OLED CMD QHD PT Panel"
+	select FB_MSM_MIPI_SAMSUNG_OLED_CMD_QHD_PT
+
+config FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT_PANEL
+	bool "MIPI TOSHIBA VIDEO QQVGA PT Panel"
+	select FB_MSM_MIPI_ILI9341_BOE_VIDEO_QVGA_PT
+
+config FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT_PANEL
+	bool "MIPI SAMSUNG OLED VIDEO QHD PT Panel"
+	select FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_QHD_PT
+
+config FB_MSM_MIPI_HX8389B_VIDEO_QHD_PT_PANEL
+	bool "MIPI HX8389B VIDEO QHD PT Panel"
+	select FB_MSM_MIPI_HX8389B_VIDEO_QHD_PT
+
+config FB_MSM_MIPI_HX8389B_TFT_VIDEO_QHD_PT_PANEL
+	bool "MIPI HX8389B VIDEO QHD PT Panel"
+	select FB_MSM_MIPI_HX8389B_TFT_VIDEO_QHD_PT
+
+config FB_MSM_MIPI_LMS_HX8389B_VIDEO_QHD_PT_PANEL
+	bool "MIPI LMS HX8389B VIDEO QHD PT Panel"
+	select FB_MSM_MIPI_HX8389B_VIDEO_QHD_PT
+
+config FB_MSM_MIPI_HX8369B_VIDEO_WVGA_PT_PANEL
+        bool "MIPI HX8369B VIDEO WVGA PT Panel"
+        select FB_MSM_MIPI_HX8369B_VIDEO_WVGA_PT
+
+config FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT_PANEL
+	bool "MIPI SAMSUNG OLED VIDEO WVGA PT Panel"
+	select FB_MSM_MIPI_SAMSUNG_OLED_VIDEO_WVGA_PT
+
 config FB_MSM_MIPI_CHIMEI_WXGA_PANEL
 	bool "MIPI Chimei WXGA PT Panel"
 	select FB_MSM_MIPI_CHIMEI_WXGA
@@ -721,6 +937,10 @@ config FB_MSM_MIPI_CHIMEI_WXGA_PANEL
 config FB_MSM_MIPI_CHIMEI_WUXGA_PANEL
 	bool "MIPI Chimei WUXGA Panel"
 	select FB_MSM_MIPI_CHIMEI_WUXGA
+
+config FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WSVGA_PT_PANEL
+	bool "SAMSUNG MIPI+LVDS WSVGA Panel"
+	select FB_MSM_MIPI_SAMSUNG_TFT_VIDEO_WSVGA_PT
 
 config FB_MSM_MIPI_TRULY_VIDEO_WVGA_PT_PANEL
 	bool "MIPI Truly Video WVGA PT Panel"
@@ -815,6 +1035,22 @@ config FB_MSM_SECONDARY_PANEL_NONE
 	---help---
 	  No secondary panel
 endchoice
+
+config MIPI_SAMSUNG_ESD_REFRESH
+	bool "Samsung ESD Recovery Driver"
+	default n
+
+config ESD_ERR_FG_RECOVERY
+	bool "Samsung ESD Recovery Driver"
+	default n
+
+config SAMSUNG_HDMI_OFF_WORKAROUND
+	bool "Samsung workaround code for HDMI off issue"
+	default n
+	---help---
+	  White noise occured when turning off the device
+	  with the HDMI cable. So if this feature is enabled,
+	  Samsung workaround code for this issue is added.
 
 config FB_MSM_LCDC_DSUB
 	depends on FB_MSM_LCDC_SAMSUNG_WSVGA && FB_MSM_MDP40 && FB_MSM_LCDC_HW
@@ -988,6 +1224,24 @@ config FB_MSM_DEFAULT_DEPTH_RGBA8888
 
 endchoice
 
+config FB_MSM_CAMERA_CSC
+	default n
+	bool "SAMSUNG JF CAMERA CSC"
+	help
+	  Support for Camere CSC tuning
+
+config BACKLIGHT_IC_KTD253
+	bool "CONFIG_BACKLIGHT_IC_KTD253"
+	default n
+	---help---
+	  support for KTD253 backlight IC
+
+config BACKLIGHT_WORKQUEUE
+	bool "CONFIG_BACKLIGHT_WORKQUEUE"
+	default n
+	---help---
+	  support for BACKLIGHT_WORKQUEUE  
+
 config FB_MSM_EBI2_EPSON_S1D_QVGA_PANEL
 	bool "EBI2 Epson QVGA Panel"
 	select FB_MSM_EBI2
@@ -1002,6 +1256,69 @@ config FB_MSM_EBI2_PANEL_DETECT
 	---help---
 	  Support for EBI2 panel auto detect
 
+config MDNIE_LITE_TUNING
+	bool "mdnie lite tuning"
+	default n
+
+config FB_MDP4_ENHANCE
+	bool "MDP4_ENHANCE solution"
+	default n
+
+config MIPI_DSI_LP_CMD_SEND
+	bool "MDP4_ENHANCE solution"
+	default n
+	
+config MIPI_DSI_RESET_LP11	
+	bool "mipi dsi reset during LP11"
+	default n
+
+config MIPI_DSI_LP_RX	
+	bool "rx interface on lp mode"
+	default n
+
+config MDP_SHUTDOWN	
+	bool "use mdp shutdown"
+	default n
+	
+config MIPI_SAMSUNG_OLED_VIDEO_QHD_MIPICLK_420
+	bool "mipi clk 420Mhz on samsung oled video qhd panel"
+	default n
+
+config MIPI_SAMSUNG_OLED_VIDEO_QHD_MIPICLK_450
+	bool "mipi clk 450Mhz on samsung oled video qhd panel"
+	default n
+
+config MIPI_SAMSUNG_OLED_VIDEO_QHD_MIPICLK_461
+	bool "mipi clk 461Mhz on samsung oled video qhd panel"
+	default n
+
+config MIPI_SAMSUNG_OLED_VIDEO_QHD_MIPICLK_473
+	bool "mipi clk 473Mhz on samsung oled video qhd panel"
+	default n
+	
+config MIPI_SAMSUNG_OLED_VIDEO_QHD_MIPICLK_480
+	bool "mipi clk 480Mhz on samsung oled video qhd panel"
+	default n
+
+config NOVATEK_VIDEO_HD_CLK_MIPICLK_432
+	bool "mipi clk 432Mhz on novatek  tft video hd panel"
+	default n
+	
+config NOVATEK_VIDEO_HD_CLK_MIPICLK_480
+	bool "mipi clk 480Mhz on novatek  tft video hd panel"
+	default n
+	
+config RUNTIME_MIPI_CLK_CHANGE
+	default n
+	bool "SAMSUNG MIPI CLK CHANGE"
+	help
+	  Support for MIPI CLK CHANGE
+
+config MIPI_MDP_REGISTER_DUMP
+	default n
+	bool "MIPI MDP REGISTER DUMP"
+	help
+	  Support for MIPI MDP REGISTER DUMP
 if FB_MSM_MDSS
 	source "drivers/video/msm/mdss/Kconfig"
 endif

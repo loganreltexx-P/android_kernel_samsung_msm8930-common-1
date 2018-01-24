@@ -25,6 +25,9 @@
 #include <linux/wakelock.h>
 #include <linux/pm_qos.h>
 #include <linux/hrtimer.h>
+#ifdef CONFIG_USB_HOST_NOTIFY
+#include <linux/host_notify.h>
+#endif
 
 /*
  * The following are bit fields describing the usb_request.udc_priv word.
@@ -213,10 +216,18 @@ struct msm_otg_platform_data {
 	unsigned int mpm_otgsessvld_int;
 	bool mhl_enable;
 	bool disable_reset_on_disconnect;
+#ifdef CONFIG_USB_HOST_NOTIFY
+	int otg_power_gpio;
+	int otg_test_gpio;
+	int ovp_ctrl_gpio;
+#endif
 	bool enable_lpm_on_dev_suspend;
 	bool core_clk_always_on_workaround;
 	struct msm_bus_scale_pdata *bus_scale_table;
 	const char *mhl_dev_name;
+#ifdef CONFIG_USB_SWITCH_TSU6721
+	int (*get_usb_state)(int data);
+#endif
 };
 
 /* Timeout (in msec) values (min - max) associated with OTG timers */
@@ -337,6 +348,16 @@ struct msm_otg {
 	unsigned mA_port;
 	struct timer_list id_timer;
 	unsigned long caps;
+#ifdef CONFIG_USB_HOST_NOTIFY
+	struct host_notify_dev ndev;
+	struct work_struct notify_work;
+	unsigned notify_state;
+	struct work_struct otg_power_work;
+	struct delayed_work late_power_work;
+	struct timer_list sm_work_timer;
+	int smartdock;
+#endif
+	bool disable_peripheral;
 	struct msm_xo_voter *xo_handle;
 	uint32_t bus_perf_client;
 	bool mhl_enabled;
@@ -464,5 +485,8 @@ static inline int msm_ep_unconfig(struct usb_ep *ep)
 {
 	return -ENODEV;
 }
+#endif
+#ifdef CONFIG_USB_SWITCH_TSU6721
+int msm_otg_get_usb_state(int data);
 #endif
 #endif

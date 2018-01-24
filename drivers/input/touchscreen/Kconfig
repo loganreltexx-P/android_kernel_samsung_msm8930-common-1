@@ -110,6 +110,83 @@ config TOUCHSCREEN_ATMEL_MXT
 	  To compile this driver as a module, choose M here: the
 	  module will be called atmel_mxt_ts.
 
+config TOUCHSCREEN_MXTS
+	tristate "Atmel MaxTouch S"
+	depends on I2C
+	default n
+	help
+	  Say Y here to enable support for the Atmel  MaxTouch S
+	  controller.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mxts.
+
+config TOUCHSCREEN_MXT336S
+	tristate "Atmel MaxTouch 336S"
+	depends on I2C
+	default n
+	help
+	  Say Y here to enable support for the Atmel MaxTouch 336 touch
+	  controller.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mxt336S.
+
+config TOUCHSCREEN_MXT224S
+	tristate "Atmel MaxTouch 224S"
+	depends on I2C
+	default n
+	help
+	  Say Y here to enable support for the Atmel MaxTouch 224 touch
+	  controller.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mxt224S.
+
+config TOUCHSCREEN_MXT224S_NEW
+	tristate "Atmel MaxTouch 224S new"
+	depends on I2C
+	default n
+	help
+	  Say Y here to enable support for the Atmel MaxTouch 224 touch
+	  controller.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mxt224S.
+
+config TOUCHSCREEN_MXT224E
+	tristate "Atmel MaxTouch 224E"
+	depends on I2C
+	default n
+	help
+	  Say Y here to enable support for the Atmel MaxTouch 224 touch
+	  controller.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mxt224E.
+
+config TOUCHSCREEN_ATMEL_MXT224S_KS02
+        tristate "Atmel mXT I2C Touchscreen for KS02"
+        depends on I2C
+        help
+          Say Y here if you have Atmel mXT series I2C touchscreen,
+          such as AT42QT602240/ATMXT224, connected to your system.
+
+          If unsure, say N.
+
+          To compile this driver as a module, choose M here: the
+          module will be called mxt224s.
+
 config TOUCHSCREEN_AUO_PIXCIR
 	tristate "AUO in-cell touchscreen using Pixcir ICs"
 	depends on I2C
@@ -1008,4 +1085,70 @@ config TOUCHSCREEN_SYNAPTICS_DSX_FW_UPDATE
 	  To compile this driver as a module, choose M here: the
 	  module will be called synaptics_dsx_fw_update.
 
+config TOUCHSCREEN_MMS136
+        tristate "Melfas MMS136 Touchscreen"
+        depends on I2C
+        help
+          Say Y here if you have Melfas MMS136 series I2C touchscreen,
+           connected to your system.
+
+          If unsure, say N.
+
+          To compile this driver as a module, choose M here: the
+          module will be called mms_ts.
+config TOUCHSCREEN_ZINITIX_BT432
+	tristate "Zinitix BT432 Touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have Zinitix BT432 series I2C touchscreen,
+	  connected to your system.
+	  If unsure, say N.
+	  To compile this driver as a module, choose M here: the
+	  module will be called zinitix_ts.
+
+config TOUCHSCREEN_ZINITIX_BT532
+	tristate "ZINITIX BT532 I2C Touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have Zinitix BT532 I2C touchscreen,
+	  such as BT532, connected to your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called BT532.
+	  
+config TOUCHSCREEN_G2
+	tristate "G2 I2C Touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have G2 I2C touchscreen,
+	
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+
+config TOUCHSCREEN_CYPRESS_TMA46X
+	tristate "CYPRESS TMA46X I2C Touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have Cypress tma46x I2C touchscreen,
+	  such as TMA46x, connected to your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tma46x.
+
+config TOUCHSCREEN_CYPRESS_TMA46X_SUPPORT_BUTTON
+	tristate "CYPRESS TMA46X I2C Touchscreen Button"
+	depends on TOUCHSCREEN_CYPRESS_TMA46X
+	help
+	  Say Y here if you have Cypress tma46x I2C touchscreen Button,
+	  such as TMA46x, connected to your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tma46x button.
 endif

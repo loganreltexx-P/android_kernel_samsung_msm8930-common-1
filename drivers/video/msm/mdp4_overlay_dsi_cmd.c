@@ -298,11 +298,11 @@ int mdp4_dsi_cmd_pipe_commit(int cndx, int wait)
 
 	mdp_update_pm(vctrl->mfd, vctrl->vsync_time);
 
-	/*
-	 * allow stage_commit without pipes queued
-	 * (vp->update_cnt == 0) to unstage pipes after
-	 * overlay_unset
-	 */
+/*                                             
+ * allow stage_commit without pipes queued     
+ * (vp->update_cnt == 0) to unstage pipes after
+ * overlay_unset                               
+ */                                            
 
 	vctrl->update_ndx++;
 	vctrl->update_ndx &= 0x01;
@@ -505,7 +505,13 @@ static void mdp4_dsi_cmd_wait4dmap(int cndx)
 	if (atomic_read(&vctrl->suspend) > 0)
 		return;
 
-	wait_for_completion(&vctrl->dmap_comp);
+	if(!wait_for_completion_timeout(
+				&vctrl->dmap_comp,HZ/30)){
+		pr_err("[QCT_TEST] ======== TIME OUT ==========\n");
+	}
+//	else {
+//		pr_info("[QCT_TEST] ======== NO TIME OUT ==========\n");
+//	}
 }
 
 static void mdp4_dsi_cmd_wait4ov(int cndx)
@@ -1067,6 +1073,12 @@ int mdp4_dsi_cmd_on(struct platform_device *pdev)
 	vctrl->dev = mfd->fbi->dev;
 	vctrl->vsync_enabled = 0;
 
+	if (!(mfd->cont_splash_done)) {
+		mfd->cont_splash_done = 1;
+		mipi_dsi_controller_cfg(0);
+		pr_debug("%s: Disabling DSI ctrl\n", __func__);
+	}
+
 	mdp_clk_ctrl(1);
 	mdp4_overlay_update_dsi_cmd(mfd);
 	mdp_clk_ctrl(0);
@@ -1232,7 +1244,7 @@ void mdp4_dsi_cmd_overlay(struct msm_fb_data_type *mfd)
 	mutex_lock(&mfd->dma->ov_mutex);
 	vctrl = &vsync_ctrl_db[cndx];
 
-	if (!mfd->panel_power_on) {
+	if (mdp_fb_is_power_off(mfd)) {
 		mutex_unlock(&mfd->dma->ov_mutex);
 		return;
 	}

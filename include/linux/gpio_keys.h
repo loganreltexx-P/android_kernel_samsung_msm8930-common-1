@@ -3,6 +3,17 @@
 
 struct device;
 
+#if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
+enum KEY_SUPPORT {
+	NOT_SUPPORT_RESUME_KEY_EVENT = 0,
+	SUPPORT_RESUME_KEY_EVENT
+};
+enum KEY_FORCE_REPORT {
+	FORCE_KEY_REPORT_OFF = 0,
+	FORCE_KEY_REPORT_ON
+};
+#endif
+
 struct gpio_keys_button {
 	/* Configuration parameters */
 	unsigned int code;	/* input event code (KEY_*, SW_*) */
@@ -15,6 +26,9 @@ struct gpio_keys_button {
 	bool can_disable;
 	int value;		/* axis value for EV_ABS */
 	unsigned int irq;	/* Irq number in case of interrupt keys */
+#if defined(CONFIG_KEYBOARD_GPIO_EXTENDED_RESUME_EVENT)
+	int support_evt;	/* enable to support resume gpio events */
+#endif
 };
 
 struct gpio_keys_platform_data {
@@ -26,6 +40,9 @@ struct gpio_keys_platform_data {
 	int (*enable)(struct device *dev);
 	void (*disable)(struct device *dev);
 	const char *name;		/* input device name */
+#ifdef CONFIG_SENSORS_HALL
+	int gpio_flip_cover;
+#endif
 };
 
 #endif

@@ -80,6 +80,9 @@
 #include <asm/smp.h>
 #endif
 
+#include <linux/gpio.h>
+#include <mach/gpiomux.h>
+
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -107,6 +110,16 @@ bool early_boot_irqs_disabled __read_mostly;
 
 enum system_states system_state __read_mostly;
 EXPORT_SYMBOL(system_state);
+
+#ifdef CONFIG_SAMSUNG_LPM_MODE
+int poweroff_charging;
+#endif /*  CONFIG_SAMSUNG_LPM_MODE */
+
+#ifdef CONFIG_FB_MSM_LOGO
+bool use_frame_buffer = 1;
+#else
+bool use_frame_buffer = 0;
+#endif
 
 /*
  * Boot command-line arguments
@@ -403,6 +416,21 @@ static int __init do_early_param(char *param, char *val)
 		}
 	}
 	/* We accept everything at this stage. */
+#ifdef CONFIG_SAMSUNG_LPM_MODE
+	/*  check power off charging */
+	if ((strncmp(param, "androidboot.mode", 16) == 0) ||
+	    (strncmp(param, "androidboot.bootchg", 19) == 0)) {
+		if ((strncmp(val, "charger", 7) == 0) ||
+		    (strncmp(val, "true", 4) == 0)) {
+			poweroff_charging = 1;
+			use_frame_buffer = 1;
+		}
+	}
+#endif
+	if ((strncmp(param, "androidboot.boot_recovery", 25) == 0))
+		if (strncmp(val, "1", 1) == 0)
+			use_frame_buffer = 1;
+
 	return 0;
 }
 
@@ -898,6 +926,16 @@ static int __init kernel_init(void * unused)
 	 * we're essentially up and running. Get rid of the
 	 * initmem segments and start the user-mode stuff..
 	 */
+	#if defined(CONFIG_MACH_SERRANO_SPR)
+	gpio_tlmm_config(GPIO_CFG(51, 0, GPIO_CFG_INPUT,
+		GPIO_CFG_NO_PULL, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+	gpio_tlmm_config(GPIO_CFG(52, 0, GPIO_CFG_INPUT,
+		GPIO_CFG_NO_PULL, GPIO_CFG_16MA), GPIO_CFG_ENABLE);
+	gpio_tlmm_config(GPIO_CFG(68, 0, GPIO_CFG_INPUT,
+		 GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 1);
+	gpio_tlmm_config(GPIO_CFG(69,  0, GPIO_CFG_INPUT,
+		 GPIO_CFG_NO_PULL, GPIO_CFG_2MA), 1);
+	#endif
 
 	init_post();
 	return 0;

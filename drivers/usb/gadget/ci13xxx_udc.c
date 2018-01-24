@@ -66,6 +66,9 @@
 #include <linux/usb/gadget.h>
 #include <linux/usb/otg.h>
 #include <linux/usb/msm_hsusb.h>
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+#include <linux/usb/composite.h>
+#endif
 #include <linux/tracepoint.h>
 #include <mach/usb_trace.h>
 #include "ci13xxx_udc.h"
@@ -443,7 +446,6 @@ static int hw_ep_flush(int num, int dir)
 	int n = hw_ep_bit(num, dir);
 	struct ci13xxx_ep *mEp = &_udc->ci13xxx_ep[n];
 
-	/* Flush ep0 even when queue is empty */
 	if (_udc->skip_flush || (num && list_empty(&mEp->qh.queue)))
 		return 0;
 
@@ -2114,18 +2116,18 @@ static int _hardware_dequeue(struct ci13xxx_ep *mEp, struct ci13xxx_req *mReq)
 	if (mReq->zptr) {
 		if ((TD_STATUS_ACTIVE & mReq->zptr->token) != 0)
 			return -EBUSY;
-
+		
 		/* The controller may access this dTD one more time.
 		 * Defer freeing this to next zero length dTD completion.
 		 * It is safe to assume that controller will no longer
-		 * access the previous dTD after next dTD completion.
+		 * access the previous dTD after next dTD completion. 
 		 */
-		if (mEp->last_zptr)
+		 if (mEp->last_zptr)
 			dma_pool_free(mEp->td_pool, mEp->last_zptr,
-					mEp->last_zdma);
-		mEp->last_zptr = mReq->zptr;
+							mEp->last_zdma);
+		mEp->last_zptr = mReq->zptr;		
 		mEp->last_zdma = mReq->zdma;
-
+		
 		mReq->zptr = NULL;
 	}
 
@@ -2282,7 +2284,7 @@ static int _gadget_stop_activity(struct usb_gadget *gadget)
 
 	if (udc->ep0in.last_zptr) {
 		dma_pool_free(udc->ep0in.td_pool, udc->ep0in.last_zptr,
-				udc->ep0in.last_zdma);
+							udc->ep0in.last_zdma);
 		udc->ep0in.last_zptr = NULL;
 	}
 
@@ -2924,12 +2926,12 @@ static int ep_disable(struct usb_ep *ep)
 			mEp->dir = (mEp->dir == TX) ? RX : TX;
 
 	} while (mEp->dir != direction);
-
+	
 	if (mEp->last_zptr) {
 		dma_pool_free(mEp->td_pool, mEp->last_zptr,
-				mEp->last_zdma);
+							mEp->last_zdma);
 		mEp->last_zptr = NULL;
-	}
+	}	
 
 	mEp->desc = NULL;
 	mEp->ep.desc = NULL;
@@ -3304,6 +3306,10 @@ static int ci13xxx_vbus_session(struct usb_gadget *_gadget, int is_active)
 	struct ci13xxx *udc = container_of(_gadget, struct ci13xxx, gadget);
 	unsigned long flags;
 	int gadget_ready = 0;
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+	struct usb_composite_dev *cdev;
+	cdev = get_gadget_data(_gadget);
+#endif
 
 	if (!(udc->udc_driver->flags & CI13XXX_PULLUP_ON_VBUS))
 		return -EOPNOTSUPP;
@@ -3316,11 +3322,19 @@ static int ci13xxx_vbus_session(struct usb_gadget *_gadget, int is_active)
 
 	if (gadget_ready) {
 		if (is_active) {
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+			if (cdev != NULL)
+				cdev->cable_connect = true;
+#endif
 			pm_runtime_get_sync(&_gadget->dev);
 			hw_device_reset(udc);
 			if (udc->softconnect)
 				hw_device_state(udc->ep0out.qh.dma);
 		} else {
+#ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
+			if (cdev != NULL)
+				cdev->cable_connect = false;
+#endif
 			hw_device_state(0);
 			_gadget_stop_activity(&udc->gadget);
 			if (udc->udc_driver->notify_event)
@@ -3490,7 +3504,7 @@ static int ci13xxx_start(struct usb_gadget_driver *driver,
 	if (!udc->status_buf) {
 		usb_ep_free_request(&udc->ep0in.ep, udc->status);
 		return -ENOMEM;
-	}
+	}	
 	spin_lock_irqsave(udc->lock, flags);
 
 	udc->gadget.ep0 = &udc->ep0in.ep;
@@ -3568,7 +3582,7 @@ static int ci13xxx_stop(struct usb_gadget_driver *driver)
 	spin_unlock_irqrestore(udc->lock, flags);
 	driver->unbind(&udc->gadget);               /* MAY SLEEP */
 	spin_lock_irqsave(udc->lock, flags);
-
+	
 	usb_ep_free_request(&udc->ep0in.ep, udc->status);
 	kfree(udc->status_buf);
 

@@ -195,6 +195,15 @@ config REGULATOR_MAX8998
 	  via I2C bus. The provided regulator is suitable for S3C6410
 	  and S5PC1XX chips to control VCC_CORE and VCC_USIM voltages.
 
+config REGULATOR_MAX77693
+	tristate "Maxim 777693 regulator"
+	depends on MFD_MAX77693
+	help
+	  This driver provides support for the voltage regulators of the
+	  MAX77693 PMIC
+	  The MAX77693 is a companion power management IC for the smart phones
+	  The Maxim Max 77693 handles PMIC, MUIC, and the flash LED control.
+
 config REGULATOR_PCAP
 	tristate "Motorola PCAP2 regulator driver"
 	depends on EZX_PCAP
@@ -215,6 +224,13 @@ config REGULATOR_LP3972
 	help
 	 Say Y here to support the voltage regulators and convertors
 	 on National Semiconductors LP3972 PMIC
+
+config REGULATOR_LP8720
+	tristate "National Semiconductors LP8720 PMIC regulator driver"
+	depends on I2C
+	help
+	 Say Y here to support the voltage regulators and convertors
+	 on National Semiconductors LP8720 PMIC
 
 config REGULATOR_PCF50633
 	tristate "NXP PCF50633 regulator driver"
