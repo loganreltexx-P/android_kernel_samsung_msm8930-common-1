@@ -119,6 +119,8 @@ void su_exit(void)
 	atomic_dec(&__su_instances);
 }
 
+ATOMIC_NOTIFIER_HEAD(migration_notifier_head);
+
 void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 {
 	unsigned long delta;
