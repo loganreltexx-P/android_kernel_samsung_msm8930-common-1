@@ -494,6 +494,24 @@ static int msm_voice_widevoice_get(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static int msm_loopback_put(struct snd_kcontrol *kcontrol,
+				 struct snd_ctl_elem_value *ucontrol)
+{
+	int loopback_enable = ucontrol->value.integer.value[0];
+
+	pr_debug("%s: loopback enable=%d\n", __func__, loopback_enable);
+
+	voc_set_loopback_enable(loopback_enable);
+	return 0;
+}
+
+static int msm_loopback_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.integer.value[0] = voc_get_loopback_enable();
+	 return 0;
+}
+
 
 static int msm_voice_slowtalk_put(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
@@ -509,6 +527,31 @@ static int msm_voice_slowtalk_put(struct snd_kcontrol *kcontrol,
 
 	return 0;
 }
+
+#ifdef CONFIG_SEC_DHA_SOL_MAL
+static int msm_sec_dha_get(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	return 0;
+}
+
+static int msm_sec_dha_put(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	int i = 0;
+
+	short dha_mode = ucontrol->value.integer.value[0];
+	short dha_select = ucontrol->value.integer.value[1];
+	short dha_param[12] = {0,};
+	for (i = 0; i < 12; i++) {
+		dha_param[i] = (short)ucontrol->value.integer.value[2+i];
+		pr_debug("msm_dha_put : param - %d\n", dha_param[i]);
+	}
+
+	return voice_sec_set_dha_data(voc_get_session_id(VOICE_SESSION_NAME),
+		dha_mode, dha_select, dha_param);
+}
+#endif /*CONFIG_SEC_DHA_SOL_MAL*/
 
 static int msm_voice_slowtalk_get(struct snd_kcontrol *kcontrol,
 			struct snd_ctl_elem_value *ucontrol)
@@ -557,6 +600,12 @@ static struct snd_kcontrol_new msm_voice_controls[] = {
 			msm_voice_widevoice_get, msm_voice_widevoice_put),
 	SOC_SINGLE_EXT("Slowtalk Enable", SND_SOC_NOPM, 0, 1, 0,
 				msm_voice_slowtalk_get, msm_voice_slowtalk_put),
+	SOC_SINGLE_EXT("Loopback Enable", SND_SOC_NOPM, 0, 1, 0,
+				msm_loopback_get, msm_loopback_put),
+#ifdef CONFIG_SEC_DHA_SOL_MAL
+	SOC_SINGLE_MULTI_EXT("Sec Set DHA data", SND_SOC_NOPM, 0, 65535, 0, 14,
+				msm_sec_dha_get, msm_sec_dha_put),
+#endif	/* CONFIG_SEC_DHA_SOL_MAL */
 	SOC_SINGLE_EXT("FENS Enable", SND_SOC_NOPM, 0, 1, 0,
 				msm_voice_fens_get, msm_voice_fens_put),
 	SOC_SINGLE_EXT("VoLTE Rx Device Mute", SND_SOC_NOPM, 0, 1, 0,
