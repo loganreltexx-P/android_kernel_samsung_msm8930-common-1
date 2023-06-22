@@ -3149,13 +3149,9 @@ static int mdp4_calc_pipe_mdp_bw(struct msm_fb_data_type *mfd,
 	quota = pipe->src_w * pipe->src_h * fps * pipe->bpp;
 
 	quota >>= shift;
-
-	pipe->bw_ab_quota = quota * mdp_bw_ab_factor / 100;
-	pipe->bw_ib_quota = quota * mdp_bw_ib_factor / 100;
-	pr_debug("%s max_bw=%llu ab_factor=%d ib_factor=%d\n", __func__,
-		mdp_max_bw, mdp_bw_ab_factor, mdp_bw_ib_factor);
-
-	/* down scaling factor for ib */
+	/* factor 1.15 for ab */
+	quota = quota * mdp_bw_ab_factor / 100;
+	/* downscaling factor for ab */
 	if ((pipe->dst_h) && (pipe->src_h) &&
 	    (pipe->src_h > pipe->dst_h)) {
 		quota = quota * pipe->src_h / pipe->dst_h;
@@ -3429,69 +3425,6 @@ int mdp4_overlay_mdp_perf_req(struct msm_fb_data_type *mfd)
 		}
 	}
 
-	if(minimum_ab == 0 ||minimum_ib == 0){
-		minimum_ab = (1920*1080*4*60)>>16;
-		minimum_ab = (minimum_ab * (u64)(mdp_bw_ab_factor / 100)) << 16;
-		minimum_ib = (1920*1080*4*60)>>16;
-		minimum_ib = (minimum_ib * (u64)(mdp_bw_ib_factor / 100)) << 16;
-	}
-
-	/*
-	 * For small video + small rgb layers above them
-	 * offset some bw
-	 */
-	if ((cnt >= 3) && (ab_quota_total < minimum_ab) && yuvcount == 1) {
-		if ((verysmallarea + yuvcount) == (cnt - 1)) {
-			ab_quota_total +=MDP_BUS_SCALE_AB_STEP;
-			ib_quota_total +=MDP_BUS_SCALE_AB_STEP;
-			ab_quota_port1 +=MDP_BUS_SCALE_AB_STEP;
-			ib_quota_port1 +=MDP_BUS_SCALE_AB_STEP;
-			ab_quota_port0 +=MDP_BUS_SCALE_AB_STEP;
-			ib_quota_port0 +=MDP_BUS_SCALE_AB_STEP;
-		} else {
-			ab_quota_total= minimum_ab;
-			ib_quota_total= minimum_ib;
-			ab_quota_port1 = minimum_ab >> 1;
-			ib_quota_port1 = minimum_ib >> 1;
-			ab_quota_port0 = minimum_ab >> 1;
-			ib_quota_port0 = minimum_ib >> 1;
-		}
-	}
-
-	/*
-	 * For Small RGB layers without video layer offset some
-	 * bandwidth to prevent underruns
-	 */
-	if ((cnt >= 2) && (src_h_total * src_w_total < 1920 * 1080)
-			&& (ab_quota_total < minimum_ab) && yuvcount == 0) {
-		u64 bw_extra =  (minimum_ab - ab_quota_total) >>  1 ;
-		int fact = ((int) (bw_extra>>16))/((int)(ab_quota_total>>16));
-
-		/* Do not increase bw for layers which require more than 3 folds */
-		if(fact <= 3 ) {
-			ab_quota_total += bw_extra;
-			ib_quota_total += bw_extra;
-			ab_quota_port1 += bw_extra >> 1;
-			ib_quota_port1 += bw_extra >> 1;
-			ab_quota_port0 += bw_extra >> 1;
-			ib_quota_port0 += bw_extra >> 1;
-		}
-	}
-
-#if defined(CONFIG_MACH_SERRANO)
-	if(cnt <= 3 && ((src_h_total  < 350 ) && (yuvcount == 0))) {
-
-
-		pr_debug(" Append Extra BW S-Cover Issue\n");
-
-		ab_quota_port0 += (minimum_ab>>2);
-		ib_quota_port0 += (minimum_ib>>2);
-
-		ab_quota_port1 += (minimum_ab>>2);
-		ib_quota_port1 += (minimum_ib>>2);
-
-	}
-#endif
 	perf_req->mdp_ab_bw = roundup(ab_quota_total, MDP_BUS_SCALE_AB_STEP);
 	perf_req->mdp_ib_bw = roundup(ib_quota_total, MDP_BUS_SCALE_AB_STEP);
 	
