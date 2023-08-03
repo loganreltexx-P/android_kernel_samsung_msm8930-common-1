@@ -1,0 +1,32 @@
+name: LineageOS 16.0 Kernel CI
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v2
+    - name: Getting Toolchain
+      run: |
+        sudo apt-get install lib32z1
+        sudo git clone --depth 1 --branch android-8.1.0_r77 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8 /opt/toolchains/arm-eabi-4.8/
+    - name: Building Kernel
+      run: |
+        make ARCH=arm msm8930_express_defconfig
+        make -j24
+    - name: Moving Output # CI only
+      run: |
+        mkdir -p /home/runner/work/output
+        cp arch/arm/boot/zImage /home/runner/work/output/zImage
+        find . -name "*.ko" -exec cp {} /home/runner/work/output/ \;
+    - name: Uploading Output
+      uses: actions/upload-artifact@v2
+      with:
+        name: zImage
+        path: /home/runner/work/output/zImage
+    - name: Uploading Modules
+      uses: actions/upload-artifact@v2
+      with:
+        name: modules
+        path: /home/runner/work/output/*.ko
