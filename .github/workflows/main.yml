@@ -9,11 +9,12 @@ jobs:
       uses: actions/checkout@v2
     - name: Getting Toolchain
       run: |
-        sudo apt-get install lib32z1
+        sudo apt-get install lib32z1 python2 python3
         sudo git clone --depth 1 --branch android-8.1.0_r77 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8 /opt/toolchains/arm-eabi-4.8/
     - name: Building Kernel
       run: |
         make clean
+        make mrproper
         make ARCH=arm samsung_express_defconfig VARIANT_DEFCONFIG=msm8930_express_eur_lte_defconfig CROSS_COMPILE=/opt/toolchains/arm-eabi-4.8/bin/arm-eabi- KERNEL_XZ=y
         make ARCH=arm -j24
     - name: Moving Output # CI only
