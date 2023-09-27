@@ -14,6 +14,13 @@ jobs:
     - name: Setting python2 instead of python3
       run: |
         which python2
+        echo 'export PATH="/usr/bin/python2:$PATH"' >> ~/.bashrc
+        sudo ln -s /usr/bin/python2 /usr/local/bin/python
+        sudo ln -s /usr/bin/pip2 /usr/local/bin/pip
+        source ~/.bashrc
+    - name: Checking python version
+      run: |
+        python --version
     - name: Building Kernel
       run: |
         make clean
