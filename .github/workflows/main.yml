@@ -13,8 +13,7 @@ jobs:
         sudo git clone --depth 1 --branch android-8.1.0_r77 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8 /opt/toolchains/arm-eabi-4.8/
     - name: Setting python2 instead of python3
       run: |
-        alias python=python2
-        python --version
+        which python2
     - name: Building Kernel
       run: |
         make clean
