@@ -10,7 +10,7 @@ jobs:
     - name: Getting Toolchain
       run: |
         sudo apt-get install lib32z1 python2 python3
-        sudo git clone --depth 1 --branch android-8.1.0_r77 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-eabi-4.8 /opt/toolchains/arm-eabi-4.8/
+        sudo git clone --depth 1 --branch android-8.1.0_r77 --single-branch https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/ /opt/toolchains/arm-linux-androideabi-4.9/
     - name: Setting python2 instead of python3
       run: |
         which python2
