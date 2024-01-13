@@ -26,7 +26,8 @@ jobs:
         make clean
         make mrproper
         make ARCH=arm samsung_express_defconfig VARIANT_DEFCONFIG=msm8930_express_eur_lte_defconfig CROSS_COMPILE=/opt/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- KERNEL_XZ=y
-        make -j24 KERNEL_XZ=y
+        make oldconfig
+        make -j24
     - name: Moving Output # CI only
       run: |
         mkdir -p /home/runner/work/output
