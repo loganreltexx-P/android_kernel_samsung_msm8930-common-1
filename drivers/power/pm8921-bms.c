@@ -15,6 +15,7 @@
 #include <linux/moduleparam.h>
 #include <linux/platform_device.h>
 #include <linux/errno.h>
+#include <linux/wakelock.h>
 #include <linux/power_supply.h>
 #include <linux/mfd/pm8xxx/pm8921-bms.h>
 #include <linux/mfd/pm8xxx/core.h>
