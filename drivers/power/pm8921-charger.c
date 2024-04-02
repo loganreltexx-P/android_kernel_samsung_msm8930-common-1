@@ -18,6 +18,7 @@
 #include <linux/errno.h>
 #include <linux/mfd/pm8xxx/pm8921-charger.h>
 #include <linux/mfd/pm8xxx/pm8921-bms.h>
+#include <linux/wakelock.h>
 #include <linux/mfd/pm8xxx/pm8xxx-adc.h>
 #include <linux/mfd/pm8xxx/ccadc.h>
 #include <linux/mfd/pm8xxx/core.h>
