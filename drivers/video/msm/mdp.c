@@ -3413,7 +3413,7 @@ void mdp_footswitch_ctrl(boolean on)
 	if (dsi_pll_vdda)
 		regulator_enable(dsi_pll_vdda);
 
-	mipi_dsi_prepare_clocks();
+	mipi_dsi_prepare_ahb_clocks();
 	mipi_dsi_ahb_ctrl(1);
 	mipi_dsi_phy_ctrl(1);
 	mipi_dsi_clk_enable();
