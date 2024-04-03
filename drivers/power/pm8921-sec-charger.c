@@ -17,6 +17,7 @@
 #include <linux/platform_device.h>
 #include <linux/errno.h>
 #include <linux/hrtimer.h>
+#include <linux/wakelock.h>
 #include <linux/mfd/pm8xxx/pm8921-charger.h>
 #include <linux/mfd/pm8xxx/pm8921-sec-charger.h>
 #include <linux/mfd/pm8xxx/pm8921-sec-attrs.h>
@@ -3866,7 +3867,7 @@ static void handle_start_ext_chg(struct pm8921_chg_chip *chip)
 	bms_notify_check(chip);
 	/* Start BMS */
 	schedule_delayed_work(&chip->eoc_work, delay);
-	__pm_stay_awake(&chip->eoc_wakeup_source);
+	wake_lock(&chip->eoc_wake_lock);
 	/* Update battery charging LEDs and user space battery info */
 	power_supply_changed(&chip->batt_psy);
 }
@@ -4420,7 +4421,7 @@ static irqreturn_t fastchg_irq_handler(int irq, void *data)
 
 	high_transition = pm_chg_get_rt_status(chip, FASTCHG_IRQ);
 	if (high_transition && !delayed_work_pending(&chip->eoc_work)) {
-		__pm_stay_awake(&chip->eoc_wakeup_source);
+		wake_lock(&chip->eoc_wake_lock);
 		schedule_delayed_work(&chip->eoc_work,
 				      round_jiffies_relative(msecs_to_jiffies
 						     (EOC_CHECK_PERIOD_MS)));
@@ -5122,7 +5123,7 @@ static void eoc_worker(struct work_struct *work)
 
 	if (end == CHG_NOT_IN_PROGRESS) {
 		count = 0;
-		__pm_relax(&chip->eoc_wakeup_source);
+		wake_unlock(&chip->eoc_wake_lock);
 		return;
 	}
 
@@ -5162,7 +5163,7 @@ static void eoc_worker(struct work_struct *work)
 			chip->bms_notify.is_battery_full = 1;
 		/* declare end of charging by invoking chgdone interrupt */
 		chgdone_irq_handler(chip->pmic_chg_irq[CHGDONE_IRQ], chip);
-		__pm_relax(&chip->eoc_wakeup_source);
+		wake_unlock(&chip->eoc_wake_lock);
 	} else {
 		check_temp_thresholds(chip);
 		adjust_vdd_max_for_fastchg(chip, vbat_batt_terminal_uv);
@@ -6283,7 +6284,7 @@ static int __devinit pm8921_charger_probe(struct platform_device *pdev)
 	the_chip = chip;
 	pr_info("battery(PM8917) register supply end\n");
 
-	wakeup_source_init(&chip->eoc_wakeup_source, "pm8921_eoc");
+	wake_lock_init(&chip->eoc_wake_lock, WAKE_LOCK_SUSPEND, "pm8921_eoc");
 	INIT_DELAYED_WORK(&chip->eoc_work, eoc_worker);
 	INIT_DELAYED_WORK(&chip->vin_collapse_check_work,
 						vin_collapse_check_worker);
